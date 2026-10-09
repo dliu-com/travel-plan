@@ -109,7 +109,7 @@ function createHandler(deps = {}) {
 
   async function getTrip(id) {
     const item = await store.getTrip(id);
-    if (!item) throw new NotFound('Trip not found');
+    if (!item) throw new NotFound('Travel plan not found');
     return item;
   }
 
@@ -132,7 +132,7 @@ function createHandler(deps = {}) {
     }
     if (parts[0] !== 'trips') throw new NotFound('Not found');
     const [, tripId, sub, subId] = parts;
-    if (tripId !== undefined && !TRIP_ID.test(tripId)) throw new NotFound('Trip not found');
+    if (tripId !== undefined && !TRIP_ID.test(tripId)) throw new NotFound('Travel plan not found');
     if (sub === 'events' && subId !== undefined && !EVENT_ID.test(subId)) throw new NotFound('Event not found');
     if (sub === 'files' && subId !== undefined && !FILE_ID.test(subId)) throw new NotFound('File not found');
 
@@ -182,7 +182,7 @@ function createHandler(deps = {}) {
       if (parts.length === 3 && method === 'POST') {
         const upload = parseUpload(readBody(event));
         const item = await getTrip(tripId);
-        if (Object.keys(item.files || {}).length >= MAX_FILES) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
+        if (Object.keys(item.files || {}).length >= MAX_FILES) throw new TooLarge(`A travel plan can have at most ${MAX_FILES} files`);
         const fileId = newFileId();
         const { url, headers } = files.uploadUrl(tripId, fileId, upload);
         return json(201, { fileId, uploadUrl: url, uploadHeaders: headers });

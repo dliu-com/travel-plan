@@ -8,7 +8,16 @@ const {
 describe('parseTrip', () => {
   test('cleans and accepts a valid trip', () => {
     expect(parseTrip({ title: '  Kyoto \r\n', destination: 'Japan', startDate: '2026-11-12', endDate: '2026-11-16', intro: 'a\r\nb', extra: 1 }))
-      .toEqual({ title: 'Kyoto', destination: 'Japan', startDate: '2026-11-12', endDate: '2026-11-16', intro: 'a\nb' });
+      .toEqual({ title: 'Kyoto', destination: 'Japan', startDate: '2026-11-12', endDate: '2026-11-16', intro: 'a\nb', travellers: [] });
+  });
+
+  test('lists who is going', () => {
+    expect(parseTrip({ title: 'x', travellers: ' Dewei, Amy，Leo、 Mia ; Tom\nTom\n\n amy  ' }).travellers)
+      .toEqual(['Dewei', 'Amy', 'Leo', 'Mia', 'Tom']);
+    expect(parseTrip({ title: 'x', travellers: ['Dewei  Liu', ''] }).travellers).toEqual(['Dewei Liu']);
+    expect(() => parseTrip({ title: 'x', travellers: 'y'.repeat(61) })).toThrow(/at most 60/);
+    expect(() => parseTrip({ title: 'x', travellers: [5] })).toThrow(/text/);
+    expect(() => parseTrip({ title: 'x', travellers: Array.from({ length: 31 }, (_, i) => `p${i}`) })).toThrow(/At most 30/);
   });
 
   test('requires a title', () => {
@@ -137,6 +146,8 @@ describe('serialisation', () => {
     expect(trip.events.map((e) => [e.id, e.title])).toEqual([['a', 'First'], ['b', 'Second']]);
     expect(trip.events[0]).not.toHaveProperty('createdAt');
     expect(trip.shareToken).toBe(item.shareToken);
+    expect(trip.travellers).toEqual([]);
+    expect(toApiTrip({ ...item, travellers: ['Amy'] }).travellers).toEqual(['Amy']);
   });
 
   test('files are listed oldest first and all belong to the trip', () => {

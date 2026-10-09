@@ -60,6 +60,25 @@ function status(value) {
   return value;
 }
 
+const MAX_TRAVELLERS = 30;
+
+// Who's going: a list, or text separated by commas, 、, semicolons or new lines.
+function travellers(value) {
+  if (value == null || value === '') return [];
+  const parts = Array.isArray(value) ? value : String(value).split(/[,，、;；\n]/);
+  const seen = new Set();
+  const names = [];
+  for (const part of parts) {
+    const name = text(part, 'Name', 60).replace(/\s+/g, ' ');
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  if (names.length > MAX_TRAVELLERS) throw new BadRequest(`At most ${MAX_TRAVELLERS} people can be listed`);
+  return names;
+}
+
 function parseTrip(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
   const trip = {
@@ -68,6 +87,7 @@ function parseTrip(input) {
     startDate: date(input.startDate, 'Start date'),
     endDate: date(input.endDate, 'End date'),
     intro: text(input.intro, 'Description', 10000),
+    travellers: travellers(input.travellers),
   };
   if (trip.startDate && trip.endDate && trip.endDate < trip.startDate) throw new BadRequest('End date is before the start date');
   return trip;
@@ -169,6 +189,7 @@ function toApiTrip(item) {
     startDate: item.startDate || '',
     endDate: item.endDate || '',
     intro: item.intro || '',
+    travellers: item.travellers || [],
     events,
     files,
     shareToken: item.shareToken || '',
@@ -185,6 +206,7 @@ function toSummary(item) {
     destination: item.destination || '',
     startDate: item.startDate || '',
     endDate: item.endDate || '',
+    travellers: item.travellers || [],
     excerpt: intro.length > 280 ? `${intro.slice(0, 277).trimEnd()}…` : intro,
     shared: Boolean(item.shareToken),
     updatedAt: item.updatedAt,
