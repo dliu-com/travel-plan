@@ -121,7 +121,7 @@ window.PlanInfo = (() => {
           { icon: 'lambda', title: t('API 校验', 'API check'), text: t('令牌必须属于这个行程', 'The token must belong to this travel plan') },
           { icon: 'map', title: t('查看并编辑', 'View and edit'), text: t('仅限这一个行程', 'This one travel plan only'), tone: 'good' },
         ],
-        note: t('“新链接”会让旧链接立即失效；“停止分享”会删除令牌。', 'New link makes the old one stop working at once; Stop sharing deletes the token.'),
+        note: t('“停止分享”会删除令牌，链接立即失效；再次“分享”会生成新的链接。', 'Stop sharing deletes the token so the link stops working at once; sharing again makes a new link.'),
       }),
       flow({
         title: t('附件上传与下载', 'Attachments'),
@@ -267,7 +267,7 @@ window.PlanInfo = (() => {
         [t('有人在行程或安排里写入恶意脚本（XSS）', 'Someone puts a malicious script in a travel plan or event (XSS)'), LOW, t('所有内容用 textContent 渲染，从不拼接 HTML；CSP 只允许本站脚本，禁止内联；链接仅 http(s)', 'Everything is rendered with textContent, never as HTML; the CSP only allows our own scripts and no inline code; links must be http(s)')],
         [t('上传恶意 HTML/SVG 来窃取会话', 'Uploading HTML or SVG to steal sessions'), LOW, t('网页类文件强制下载；附件来自 S3 域名，接触不到 plan.dliu.com 的 Cookie', 'Web content is forced to download; files come from the S3 domain, which cannot reach plan.dliu.com cookies')],
         [t('上传病毒或伪装扩展名的文件', 'Uploading malware or files with disguised extensions'), MEDIUM, t('清除文件名中的方向控制字符；危险类型只能下载；但没有病毒扫描，打开前请确认来源', 'Direction marks are stripped from names; risky types only download; but there is no virus scan, so check before opening')],
-        [t('分享链接泄露', 'A share link leaks'), MEDIUM, t('令牌只能用于一个行程，不能删除行程；随时可用“新链接”或“停止分享”作废', 'A token works for one travel plan and cannot delete it; New link or Stop sharing revokes it at once')],
+        [t('分享链接泄露', 'A share link leaks'), MEDIUM, t('令牌只能用于一个行程，不能删除行程；随时可用“停止分享”作废，再分享即得新链接', 'A token works for one travel plan and cannot delete it; Stop sharing revokes it at once, and sharing again makes a new link')],
         [t('暴力猜测令牌或行程编号', 'Guessing tokens or travel plan ids'), LOW, t('144 位随机令牌，实际上无法猜中；编号可猜，但没有令牌或登录只会得到相同的拒绝', '144-bit random tokens are infeasible to guess; ids are guessable, but without a token or sign-in every guess gets the same refusal')],
         [t('跨站请求伪造（CSRF）', 'Cross-site request forgery'), LOW, t('SameSite=Lax 会话 Cookie；写请求必须带 plan.dliu.com 的 Origin 和 JSON 类型', 'SameSite=Lax session cookie; writes need the plan.dliu.com Origin and a JSON body')],
         [t('点击劫持', 'Clickjacking'), LOW, 'X-Frame-Options: DENY · frame-ancestors \'none\''],
