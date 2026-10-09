@@ -30,6 +30,7 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
   var uri = request.uri;
   if (uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0) request.uri = '/index.html';
+  else if (uri === '/about' || uri === '/about/' || uri === '/security' || uri === '/security/') request.uri = '/index.html';
   return request;
 }`;
 
@@ -94,6 +95,8 @@ export class TravelPlanStack extends Stack {
       code: lambda.Code.fromAsset(path.join(ROOT, 'lambda/api')),
       timeout: Duration.seconds(15),
       memorySize: 512,
+      // The account's Lambda concurrency is shared with the other dliu.com sites; a flood here can't take it all.
+      reservedConcurrentExecutions: 20,
       description: 'plan.dliu.com trips API and Microsoft Entra sign-in',
       environment: {
         SITE_URL: siteUrl,
@@ -156,7 +159,10 @@ export class TravelPlanStack extends Stack {
         strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: false, override: true },
       },
       customHeadersBehavior: {
-        customHeaders: [{ header: 'X-Robots-Tag', value: 'noindex, nofollow', override: true }],
+        customHeaders: [
+          { header: 'X-Robots-Tag', value: 'noindex, nofollow', override: true },
+          { header: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', override: true },
+        ],
       },
     });
 

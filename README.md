@@ -5,11 +5,11 @@ Private trip plans at **https://plan.dliu.com**, written like a blog: one trip i
 - **Private by default.** Visitors to plan.dliu.com don't see any trips. People in the dliu.com Microsoft 365 org sign in (Entra ID) and can read and edit every trip.
 - **Trip addresses** are `https://plan.dliu.com/plan/YYYYMMNN`: the year and month the trip was created, then a two-digit counter for that month (`20261000`, `20261001`, …).
 - **Share links** are `https://plan.dliu.com/plan/<id>?token=<token>`. Anyone holding one can view **and edit** that one trip (details, events, files) without signing in. They can't see other trips, delete the trip or manage sharing. *Stop sharing* turns the link off immediately. *New link* replaces it, and the old link stops working. Edits made through a link are recorded as "someone with the link". Old `/s/<token>` and `/trips/<id>` addresses redirect.
-- **Attachments.** Up to 200 files per trip and 50 MB each, attached to the trip or to an event (drag and drop, or 📎). Files go straight from the browser to a private S3 bucket using short-lived presigned URLs. Images, PDFs, text, audio and video open in the browser. Everything else, including HTML and SVG, always downloads as `application/octet-stream`.
+- **Attachments.** Up to 200 files per trip and 50 MB each, attached to the trip itself (drag and drop onto the Files section, or 📎); events have no attachments of their own. Files go straight from the browser to a private S3 bucket using short-lived presigned URLs. Images, PDFs, text, audio and video open in the browser. Everything else, including HTML and SVG, always downloads as `application/octet-stream`.
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
-   │            │  viewer-request: /plan/*, /trips/*, /s/* → /index.html
+   │            │  viewer-request: /plan/*, /trips/*, /s/*, /about, /security → /index.html
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken)
    │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
    │            │                                                        └──▶ S3 files bucket (presigns URLs)
@@ -21,15 +21,18 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
 | --- | --- | --- |
 | `/` | signed in | trip index plus "New trip"; signed-out visitors only see a sign-in card |
 | `/plan/<id>` | signed in | the post with editing, events, files and the share panel |
+| `/about`, `/security` | anyone | how the site works and what it costs; threat model and penetration-test results |
 | `/plan/<id>?token=<token>` | anyone with the link | the same post, editable, without the share panel or trip deletion |
 | `/api/trips` (GET, POST) | signed in | list and create trips |
 | `/api/trips/<id>` and `/events…` | signed in or that trip's token (`x-plan-token` header or `?token=`) | read and edit the trip and its events |
-| `/api/trips/<id>/files…` | signed in or that trip's token | `POST` starts an upload (returns a presigned PUT), `PUT /files/<fid>` confirms, renames or moves it, `GET` redirects to a presigned download, `DELETE` removes it |
+| `/api/trips/<id>/files…` | signed in or that trip's token | `POST` starts an upload (returns a presigned PUT), `PUT /files/<fid>` confirms or renames it, `GET` redirects to a presigned download, `DELETE` removes it |
 | `DELETE /api/trips/<id>`, `POST/DELETE /api/trips/<id>/share` | signed in | delete the trip, turn the share link on or off |
 | `/api/shared/<token>` | anyone | `{id}` for old `/s/<token>` links |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | | Entra OIDC (PKCE) with a signed 30-day session cookie |
 
 Note: CloudFront access logs record full URLs, so share tokens in `?token=` appear in the TrafficMonitor logs. The app itself sends the token in a header.
+
+Hardening: strict CSP (`script-src 'self'; style-src 'self'`, no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API Lambda capped at 20 concurrent runs so a flood can't run up costs. Details are on `/security`.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 

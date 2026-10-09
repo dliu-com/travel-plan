@@ -201,22 +201,21 @@ describe('share links', () => {
 });
 
 describe('files', () => {
-  async function upload(call, files, tripId, { name = 'ticket.pdf', type = 'application/pdf', body = '%PDF-1', eventId = '', ...options } = {}) {
-    const start = await call('POST', `/api/trips/${tripId}/files`, { ...options, body: { name, size: Buffer.byteLength(body), type, eventId } });
+  async function upload(call, files, tripId, { name = 'ticket.pdf', type = 'application/pdf', body = '%PDF-1', ...options } = {}) {
+    const start = await call('POST', `/api/trips/${tripId}/files`, { ...options, body: { name, size: Buffer.byteLength(body), type } });
     expect(start.statusCode).toBe(201);
     expect(start.json.uploadHeaders).toEqual({ 'content-type': type });
     files.put(new URL(start.json.uploadUrl, SITE_URL).pathname.replace('/dev-files/', ''), body, type);
-    return { fileId: start.json.fileId, done: await call('PUT', `/api/trips/${tripId}/files/${start.json.fileId}`, { ...options, body: { name, eventId } }) };
+    return { fileId: start.json.fileId, done: await call('PUT', `/api/trips/${tripId}/files/${start.json.fileId}`, { ...options, body: { name } }) };
   }
 
-  test('attach, open, rename, move and remove files', async () => {
+  test('attach, open, rename and remove files', async () => {
     const { call, files } = setup();
     const trip = await createTrip(call);
-    const event = (await call('POST', `/api/trips/${trip.id}/events`, { body: { title: 'Flight' } })).json.eventId;
 
-    const { fileId, done } = await upload(call, files, trip.id, { eventId: event });
+    const { fileId, done } = await upload(call, files, trip.id);
     expect(done.statusCode).toBe(201);
-    expect(done.json.trip.files).toEqual([expect.objectContaining({ id: fileId, name: 'ticket.pdf', size: 6, type: 'application/pdf', eventId: event })]);
+    expect(done.json.trip.files).toEqual([{ id: fileId, name: 'ticket.pdf', size: 6, type: 'application/pdf', createdAt: expect.any(String) }]);
     expect([...files.objects.keys()]).toEqual([`trips/${trip.id}/${fileId}`]);
 
     const open = await call('GET', `/api/trips/${trip.id}/files/${fileId}`);
@@ -225,8 +224,8 @@ describe('files', () => {
     const download = await call('GET', `/api/trips/${trip.id}/files/${fileId}?download=1`);
     expect(decodeURIComponent(download.headers.location)).toContain('attachment;');
 
-    const moved = await call('PUT', `/api/trips/${trip.id}/files/${fileId}`, { body: { name: 'boarding.pdf', eventId: '' } });
-    expect(moved.json.trip.files[0]).toMatchObject({ name: 'boarding.pdf', eventId: '' });
+    const renamed = await call('PUT', `/api/trips/${trip.id}/files/${fileId}`, { body: { name: 'boarding.pdf' } });
+    expect(renamed.json.trip.files[0]).toEqual(expect.objectContaining({ name: 'boarding.pdf' }));
 
     expect((await call('DELETE', `/api/trips/${trip.id}/files/${fileId}`)).json.trip.files).toEqual([]);
     expect(files.objects.size).toBe(0);
@@ -250,7 +249,6 @@ describe('files', () => {
     const post = (body) => call('POST', `/api/trips/${trip.id}/files`, { body });
     expect((await post({ name: 'x', size: 0 })).statusCode).toBe(400);
     expect((await post({ name: 'x', size: 60 * 1024 * 1024 })).statusCode).toBe(400);
-    expect((await post({ name: 'x', size: 1, eventId: 'missingevent' })).statusCode).toBe(400);
     // Confirming before anything was uploaded.
     const start = await post({ name: 'x', size: 1 });
     expect((await call('PUT', `/api/trips/${trip.id}/files/${start.json.fileId}`, { body: { name: 'x' } })).statusCode).toBe(404);

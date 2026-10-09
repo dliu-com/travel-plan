@@ -101,26 +101,26 @@ const newEventId = () => crypto.randomBytes(9).toString('base64url');
 const newShareToken = () => crypto.randomBytes(18).toString('base64url');
 const newFileId = () => crypto.randomBytes(12).toString('base64url');
 
-function eventRef(value) {
-  if (value == null || value === '') return '';
-  if (typeof value !== 'string' || !EVENT_ID.test(value)) throw new BadRequest('Unknown event');
-  return value;
+// A file the browser is about to upload: what it is called and how big it is. Files belong to the trip, not to events.
+// File names are one line, without the direction marks that can make "photo\u202Egpj.exe" look like "photoexe.jpg".
+function fileName(value) {
+  const clean = typeof value === 'string' ? value.replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ') : value;
+  return text(clean, 'File name', 200, { required: true });
 }
 
-// A file the browser is about to upload: what it is called, how big it is and where it belongs.
 function parseUpload(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
-  const name = text(input.name, 'File name', 200, { required: true });
+  const name = fileName(input.name);
   if (!Number.isSafeInteger(input.size) || input.size < 1) throw new BadRequest('File is empty');
   if (input.size > MAX_FILE_BYTES) throw new BadRequest(`Files can be at most ${MAX_FILE_BYTES / 1024 / 1024} MB`);
   const type = typeof input.type === 'string' && input.type.length <= 100 && MIME_TYPE.test(input.type)
     ? input.type.toLowerCase() : 'application/octet-stream';
-  return { name, size: input.size, type, eventId: eventRef(input.eventId) };
+  return { name, size: input.size, type };
 }
 
 function parseFileUpdate(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
-  return { name: text(input.name, 'File name', 200, { required: true }), eventId: eventRef(input.eventId) };
+  return { name: fileName(input.name) };
 }
 
 // Undated events go last; within a day, events without a time come first (all-day), then by time.
@@ -159,8 +159,6 @@ function toApiTrip(item) {
       name: file.name || 'file',
       size: file.size || 0,
       type: file.type || 'application/octet-stream',
-      // A file whose event is gone shows up with the trip's own files.
-      eventId: file.eventId && item.events && item.events[file.eventId] ? file.eventId : '',
       createdAt: file.createdAt || '',
     }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));

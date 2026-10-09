@@ -113,10 +113,6 @@ function createHandler(deps = {}) {
     return item;
   }
 
-  function checkEvent(item, eventId) {
-    if (eventId && !(item.events || {})[eventId]) throw new BadRequest('Unknown event');
-  }
-
   async function api(method, parts, event) {
     // /api/me
     if (parts.length === 1 && parts[0] === 'me' && method === 'GET') {
@@ -186,7 +182,6 @@ function createHandler(deps = {}) {
       if (parts.length === 3 && method === 'POST') {
         const upload = parseUpload(readBody(event));
         const item = await getTrip(tripId);
-        checkEvent(item, upload.eventId);
         if (Object.keys(item.files || {}).length >= MAX_FILES) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
         const fileId = newFileId();
         const { url, headers } = files.uploadUrl(tripId, fileId, upload);
@@ -201,8 +196,7 @@ function createHandler(deps = {}) {
       if (parts.length === 4 && method === 'PUT') {
         const update = parseFileUpdate(readBody(event));
         const item = await getTrip(tripId);
-        checkEvent(item, update.eventId);
-        // Rename, or move to another event (or to the trip itself).
+        // Rename a kept file, or keep a finished upload.
         if ((item.files || {})[subId]) return json(200, { trip: toApiTrip(await store.updateFile(tripId, subId, update, user)) });
         const uploaded = await files.uploaded(tripId, subId);
         if (!uploaded) throw new NotFound('Upload not found. Try again.');

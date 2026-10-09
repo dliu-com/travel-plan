@@ -54,14 +54,22 @@ describe('parseEvent', () => {
 
 describe('uploads', () => {
   test('uploads need a name and a sensible size; odd types become octet-stream', () => {
-    expect(parseUpload({ name: ' ticket.pdf ', size: 10, type: 'application/pdf' })).toEqual({ name: 'ticket.pdf', size: 10, type: 'application/pdf', eventId: '' });
+    expect(parseUpload({ name: ' ticket.pdf ', size: 10, type: 'application/pdf' })).toEqual({ name: 'ticket.pdf', size: 10, type: 'application/pdf' });
     expect(parseUpload({ name: 'x', size: 1, type: 'text/html"><script>' }).type).toBe('application/octet-stream');
     expect(parseUpload({ name: 'x', size: 1, type: '' }).type).toBe('application/octet-stream');
     expect(() => parseUpload({ name: '', size: 1 })).toThrow(/required/);
     expect(() => parseUpload({ name: 'x', size: 0 })).toThrow(/empty/);
     expect(() => parseUpload({ name: 'x', size: 51 * 1024 * 1024 })).toThrow(/50 MB/);
-    expect(() => parseUpload({ name: 'x', size: 1, eventId: '../x' })).toThrow(/Unknown event/);
-    expect(parseFileUpdate({ name: 'y', eventId: 'abcdefgh' })).toEqual({ name: 'y', eventId: 'abcdefgh' });
+    // Files belong to the trip; an event reference from an old client is ignored.
+    expect(parseUpload({ name: 'x', size: 1, eventId: '../x' })).toEqual({ name: 'x', size: 1, type: 'application/octet-stream' });
+    expect(parseFileUpdate({ name: 'y', eventId: 'abcdefgh' })).toEqual({ name: 'y' });
+  });
+
+  test('file names are one line without direction overrides', () => {
+    expect(parseFileUpdate({ name: 'evil\r\nSet-Cookie: x=1\t.txt' }).name).toBe('evil Set-Cookie: x=1 .txt');
+    expect(parseFileUpdate({ name: 'invoice\u202Etxt.exe' }).name).toBe('invoicetxt.exe');
+    expect(parseUpload({ name: '\u2066a\u2069.pdf', size: 1 }).name).toBe('a.pdf');
+    expect(() => parseFileUpdate({ name: '\u202E' })).toThrow(/required/);
   });
 });
 
@@ -131,7 +139,7 @@ describe('serialisation', () => {
     expect(trip.shareToken).toBe(item.shareToken);
   });
 
-  test('files are listed oldest first and fall back to the trip when their event is gone', () => {
+  test('files are listed oldest first and all belong to the trip', () => {
     const trip = toApiTrip({
       ...item,
       files: {
@@ -140,8 +148,8 @@ describe('serialisation', () => {
       },
     });
     expect(trip.files).toEqual([
-      { id: 'f1', name: 'a.png', size: 1, type: 'image/png', eventId: 'a', createdAt: '1' },
-      { id: 'f2', name: 'b.pdf', size: 2, type: 'application/pdf', eventId: '', createdAt: '2' },
+      { id: 'f1', name: 'a.png', size: 1, type: 'image/png', createdAt: '1' },
+      { id: 'f2', name: 'b.pdf', size: 2, type: 'application/pdf', createdAt: '2' },
     ]);
     expect(toApiTrip({ ...item, files: undefined }).files).toEqual([]);
   });

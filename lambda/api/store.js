@@ -234,14 +234,14 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
       }
     },
 
-    async updateFile(tripId, fileId, { name, eventId }, user) {
+    async updateFile(tripId, fileId, { name }, user) {
       const result = await write(new lib.UpdateCommand({
         TableName: table,
         Key: { id: tripId },
         ConditionExpression: 'attribute_exists(id) AND attribute_exists(files.#f)',
-        UpdateExpression: 'SET files.#f.#n = :name, files.#f.eventId = :event, updatedAt = :at, updatedBy = :by',
+        UpdateExpression: 'SET files.#f.#n = :name, updatedAt = :at, updatedBy = :by REMOVE files.#f.eventId',
         ExpressionAttributeNames: { '#f': fileId, '#n': 'name' },
-        ExpressionAttributeValues: { ':name': name, ':event': eventId, ':at': now(), ':by': user },
+        ExpressionAttributeValues: { ':name': name, ':at': now(), ':by': user },
         ReturnValues: 'ALL_NEW',
       }));
       return result.Attributes;
