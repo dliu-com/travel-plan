@@ -23,7 +23,6 @@ import {
 const ROOT = path.join(__dirname, '..');
 
 export const PARAMETER_PREFIX = '/travel-plan';
-export const TRAFFIC_SITE_KEY = 'plan';
 
 // Serves the single-page app for trip pages (/plan/<id>) and old links (/trips/<id>, /s/<token>).
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
@@ -175,8 +174,8 @@ export class TravelPlanStack extends Stack {
     const functionAssociations: cloudfront.FunctionAssociation[] = [
       { eventType: cloudfront.FunctionEventType.VIEWER_REQUEST, function: rewrite },
     ];
-    let logging: Partial<cloudfront.DistributionProps> = {};
-    if (props.trafficLogging ?? true) {
+    const trafficLogging = props.trafficLogging ?? true;
+    if (trafficLogging) {
       functionAssociations.push({
         eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
         function: cloudfront.Function.fromFunctionAttributes(this, 'VisitorId', {
@@ -184,15 +183,6 @@ export class TravelPlanStack extends Stack {
           functionName: 'dliu-visitor-id',
         }),
       });
-      logging = {
-        enableLogging: true,
-        logBucket: s3.Bucket.fromBucketAttributes(this, 'TrafficLogs', {
-          bucketName: Fn.importValue('TrafficLogBucketName'),
-          region: 'eu-west-1',
-        }),
-        logFilePrefix: `raw/${TRAFFIC_SITE_KEY}/`,
-        logIncludesCookies: true,
-      };
     }
 
     const apiBehavior: cloudfront.BehaviorOptions = {
@@ -224,8 +214,13 @@ export class TravelPlanStack extends Stack {
       defaultRootObject: 'index.html',
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      ...logging,
     });
+    if (trafficLogging) {
+      // TrafficMonitor delivers this distribution's access logs (CloudFront standard logging v2).
+      // IncludeCookies is the only legacy logging setting v2 honours: it puts the dl_vid cookie in the logs.
+      (distribution.node.defaultChild as cloudfront.CfnDistribution)
+        .addPropertyOverride('DistributionConfig.Logging', { IncludeCookies: true });
+    }
 
     // New function URLs require both invoke permissions. CDK adds InvokeFunctionUrl.
     apiHandler.addPermission('CloudFrontInvokeFunction', {

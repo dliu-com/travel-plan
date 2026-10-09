@@ -74,12 +74,9 @@ test('the api cannot use up the shared account concurrency', () => {
   template.hasResourceProperties('AWS::Lambda::Function', { ReservedConcurrentExecutions: 20 });
 });
 
-test('logs go to the traffic monitor under the plan site key', () => {
-  template.hasResourceProperties('AWS::CloudFront::Distribution', {
-    DistributionConfig: Match.objectLike({
-      Logging: Match.objectLike({ Prefix: 'raw/plan/', IncludeCookies: true }),
-    }),
-  });
+test('access logs include cookies for the traffic monitor, without legacy log files', () => {
+  const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
+  expect(distribution.Properties.DistributionConfig.Logging).toEqual({ IncludeCookies: true });
 });
 
 test('traffic logging can be turned off', () => {

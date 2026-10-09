@@ -14,7 +14,7 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken)
    │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
    │            │                                                        └──▶ S3 files bucket (presigns URLs)
-   │            └─ logs ──▶ TrafficMonitor bucket raw/plan/
+   │            └─ access logs (v2, set up by TrafficMonitor) ──▶ TrafficMonitor bucket
    └── presigned PUT/GET ──▶ S3 files bucket (private; pending/ expires after 1 day, trips/<id>/<file>)
 ```
 
@@ -46,7 +46,7 @@ make deploy        # stack "TravelPlan" in eu-west-1; needs the exports MainDoma
 make outputs
 ```
 
-Traffic logging needs the TrafficMonitor stack exports (`TrafficLogBucketName`, `TrafficVisitorFunctionArn`). Deploy without it using `npx cdk deploy -c trafficLogging=false`. For the logs to be queryable, `traffic-monitor/config/sites.json` needs the `plan` site and a redeploy of TrafficMonitor.
+Traffic logging needs the TrafficMonitor stack export `TrafficVisitorFunctionArn`; this stack only adds the visitor-ID function and turns on cookies in the access logs. The log delivery itself is created by TrafficMonitor, from the `plan` entry in `traffic-monitor/config/sites.json`. Deploy without it using `npx cdk deploy -c trafficLogging=false`.
 
 ## Microsoft 365 / Entra sign-in
 
