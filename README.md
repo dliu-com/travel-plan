@@ -1,27 +1,35 @@
-# travel-plan
+# travel-plan — DL Travel Plan
 
-Private trip plans at **https://plan.dliu.com**, written like a blog: one trip is one post, made of events grouped by day.
+Private trip plans at **https://plan.dliu.com**, written like a blog: one trip is one post with a description, attachments and events grouped by day.
 
 - **Private by default.** Visitors to plan.dliu.com don't see any trips. People in the dliu.com Microsoft 365 org sign in (Entra ID) and can read and edit every trip.
-- **Share links.** Any trip can get a link `https://plan.dliu.com/s/<token>`. Friends open it read-only without signing in. *Stop sharing* turns the link off immediately. *New link* replaces it, and the old link stops working.
-- **Shared view hides** the trip id, the token and who last edited it.
+- **Trip addresses** are `https://plan.dliu.com/plan/YYYYMMNN`: the year and month the trip was created, then a two-digit counter for that month (`20261000`, `20261001`, …).
+- **Share links** are `https://plan.dliu.com/plan/<id>?token=<token>`. Anyone holding one can view **and edit** that one trip (details, events, files) without signing in. They can't see other trips, delete the trip or manage sharing. *Stop sharing* turns the link off immediately. *New link* replaces it, and the old link stops working. Edits made through a link are recorded as "someone with the link". Old `/s/<token>` and `/trips/<id>` addresses redirect.
+- **Attachments.** Up to 200 files per trip and 50 MB each, attached to the trip or to an event (drag and drop, or 📎). Files go straight from the browser to a private S3 bucket using short-lived presigned URLs. Images, PDFs, text, audio and video open in the browser. Everything else, including HTML and SVG, always downloads as `application/octet-stream`.
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
-                │  viewer-request: /trips/* and /s/* → /index.html
-                ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken)
-                │                                                        └──▶ SSM /travel-plan/* (Entra settings)
-                └─ logs ──▶ TrafficMonitor bucket raw/plan/
+   │            │  viewer-request: /plan/*, /trips/*, /s/* → /index.html
+   │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken)
+   │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
+   │            │                                                        └──▶ S3 files bucket (presigns URLs)
+   │            └─ logs ──▶ TrafficMonitor bucket raw/plan/
+   └── presigned PUT/GET ──▶ S3 files bucket (private; pending/ expires after 1 day, trips/<id>/<file>)
 ```
 
 | Path | Who | What |
 | --- | --- | --- |
 | `/` | signed in | trip index plus "New trip"; signed-out visitors only see a sign-in card |
-| `/trips/<id>` | signed in | the post with editing, events and the share panel |
-| `/s/<token>` | anyone with the link | read-only post |
-| `/api/trips…` | signed in | trips/events CRUD, `POST/DELETE /api/trips/<id>/share` |
-| `/api/shared/<token>` | anyone | the shared trip |
+| `/plan/<id>` | signed in | the post with editing, events, files and the share panel |
+| `/plan/<id>?token=<token>` | anyone with the link | the same post, editable, without the share panel or trip deletion |
+| `/api/trips` (GET, POST) | signed in | list and create trips |
+| `/api/trips/<id>` and `/events…` | signed in or that trip's token (`x-plan-token` header or `?token=`) | read and edit the trip and its events |
+| `/api/trips/<id>/files…` | signed in or that trip's token | `POST` starts an upload (returns a presigned PUT), `PUT /files/<fid>` confirms, renames or moves it, `GET` redirects to a presigned download, `DELETE` removes it |
+| `DELETE /api/trips/<id>`, `POST/DELETE /api/trips/<id>/share` | signed in | delete the trip, turn the share link on or off |
+| `/api/shared/<token>` | anyone | `{id}` for old `/s/<token>` links |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | | Entra OIDC (PKCE) with a signed 30-day session cookie |
+
+Note: CloudFront access logs record full URLs, so share tokens in `?token=` appear in the TrafficMonitor logs. The app itself sends the token in a header.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 

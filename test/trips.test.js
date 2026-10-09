@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  BadRequest, SHARE_TOKEN, TRIP_ID, compareEvents, compareSummaries, newShareToken, newTripId,
+  BadRequest, SHARE_TOKEN, TRIP_ID, compareEvents, compareSummaries, newShareToken, nextTripId, newFileId, FILE_ID, parseUpload, parseFileUpdate,
   parseEvent, parseTrip, toApiTrip, toSharedTrip, toSummary,
 } = require('../lambda/api/trips');
 
@@ -52,13 +52,34 @@ describe('parseEvent', () => {
   });
 });
 
+describe('uploads', () => {
+  test('uploads need a name and a sensible size; odd types become octet-stream', () => {
+    expect(parseUpload({ name: ' ticket.pdf ', size: 10, type: 'application/pdf' })).toEqual({ name: 'ticket.pdf', size: 10, type: 'application/pdf', eventId: '' });
+    expect(parseUpload({ name: 'x', size: 1, type: 'text/html"><script>' }).type).toBe('application/octet-stream');
+    expect(parseUpload({ name: 'x', size: 1, type: '' }).type).toBe('application/octet-stream');
+    expect(() => parseUpload({ name: '', size: 1 })).toThrow(/required/);
+    expect(() => parseUpload({ name: 'x', size: 0 })).toThrow(/empty/);
+    expect(() => parseUpload({ name: 'x', size: 51 * 1024 * 1024 })).toThrow(/50 MB/);
+    expect(() => parseUpload({ name: 'x', size: 1, eventId: '../x' })).toThrow(/Unknown event/);
+    expect(parseFileUpdate({ name: 'y', eventId: 'abcdefgh' })).toEqual({ name: 'y', eventId: 'abcdefgh' });
+  });
+});
+
 describe('ids', () => {
-  test('trip ids are readable slugs with a random suffix', () => {
-    const id = newTripId('Autumn in Kyōto!', Buffer.alloc(8, 255));
-    expect(id).toMatch(/^autumn-in-kyoto-[a-z0-9]{10}$/);
-    expect(TRIP_ID.test(id)).toBe(true);
-    expect(newTripId('東京')).toMatch(/^trip-[a-z0-9]{10}$/);
-    expect(TRIP_ID.test(newTripId('x'.repeat(100)))).toBe(true);
+  test('trip ids are the creation month plus a counter', () => {
+    const at = '2026-10-09T02:26:15.896Z';
+    expect(nextTripId([], at)).toBe('20261000');
+    expect(nextTripId(['20261000', '20261001', '20260905'], at)).toBe('20261002');
+    // A gap left by a deleted trip is not reused while later numbers exist.
+    expect(nextTripId(['20261000', '20261007'], at)).toBe('20261008');
+    expect(nextTripId(['20260999', 'old-slug-abcdefghij'], at)).toBe('20261000');
+    expect(nextTripId(['20261099'], at)).toBeNull();
+    expect(TRIP_ID.test('20261000')).toBe(true);
+    expect(TRIP_ID.test('spain-ibiza-67mrt9qxtc')).toBe(false);
+  });
+
+  test('file ids match their route pattern', () => {
+    expect(FILE_ID.test(newFileId())).toBe(true);
   });
 
   test('share tokens are unguessable and match the route pattern', () => {
@@ -110,12 +131,19 @@ describe('serialisation', () => {
     expect(trip.shareToken).toBe(item.shareToken);
   });
 
-  test('shared trips hide the id, token and editor', () => {
-    const shared = toSharedTrip(item);
-    expect(shared).not.toHaveProperty('id');
-    expect(shared).not.toHaveProperty('shareToken');
-    expect(shared).not.toHaveProperty('updatedBy');
-    expect(shared.events).toHaveLength(2);
+  test('files are listed oldest first and fall back to the trip when their event is gone', () => {
+    const trip = toApiTrip({
+      ...item,
+      files: {
+        f2: { name: 'b.pdf', size: 2, type: 'application/pdf', eventId: 'gone', createdAt: '2' },
+        f1: { name: 'a.png', size: 1, type: 'image/png', eventId: 'a', createdAt: '1', createdBy: 'Dewei' },
+      },
+    });
+    expect(trip.files).toEqual([
+      { id: 'f1', name: 'a.png', size: 1, type: 'image/png', eventId: 'a', createdAt: '1' },
+      { id: 'f2', name: 'b.pdf', size: 2, type: 'application/pdf', eventId: '', createdAt: '2' },
+    ]);
+    expect(toApiTrip({ ...item, files: undefined }).files).toEqual([]);
   });
 
   test('summaries carry a short excerpt and the shared flag', () => {

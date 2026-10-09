@@ -1,6 +1,6 @@
 'use strict';
 
-const { MAX_EVENTS, newEventId, newShareToken, newTripId } = require('./trips');
+const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId } = require('./trips');
 
 const SHARE_INDEX = 'byShareToken';
 
@@ -21,6 +21,8 @@ function documentClient() {
 
 const isConditionFailure = (error) => error && error.name === 'ConditionalCheckFailedException';
 const isTooLarge = (error) => error && error.name === 'ValidationException' && /size/i.test(error.message || '');
+// Trips created before attachments existed have no files map, so files.<id> can't be set yet.
+const isMissingMap = (error) => error && error.name === 'ValidationException' && /document path/i.test(error.message || '');
 
 function createStore({ client, table = process.env.TABLE_NAME, now = () => new Date().toISOString() } = {}) {
   const lib = require('@aws-sdk/lib-dynamodb');
@@ -97,11 +99,32 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
       return result.Attributes;
     },
 
+    async tripIds() {
+      const ids = [];
+      let ExclusiveStartKey;
+      do {
+        const page = await send(new lib.ScanCommand({ TableName: table, ProjectionExpression: 'id', ExclusiveStartKey }));
+        ids.push(...(page.Items || []).map((item) => item.id));
+        ExclusiveStartKey = page.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return ids;
+    },
+
+    // Ids are numbered per month; if two people create a trip at the same moment, the loser takes the next number.
     async createTrip(fields, user) {
-      const at = now();
-      const item = { id: newTripId(fields.title), ...fields, events: {}, createdAt: at, updatedAt: at, updatedBy: user };
-      await write(new lib.PutCommand({ TableName: table, Item: item, ConditionExpression: 'attribute_not_exists(id)' }));
-      return item;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const at = now();
+        const id = nextTripId(await this.tripIds(), at);
+        if (!id) throw new TooLarge('Too many trips this month');
+        const item = { id, ...fields, events: {}, files: {}, createdAt: at, updatedAt: at, updatedBy: user };
+        try {
+          await send(new lib.PutCommand({ TableName: table, Item: item, ConditionExpression: 'attribute_not_exists(id)' }));
+          return item;
+        } catch (error) {
+          if (!isConditionFailure(error)) throw error;
+        }
+      }
+      throw new Error('Could not pick a trip id');
     },
 
     async updateTrip(id, fields, user) {
@@ -175,6 +198,62 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
         ConditionExpression: 'attribute_exists(id) AND attribute_exists(events.#e)',
         UpdateExpression: 'REMOVE events.#e SET updatedAt = :at, updatedBy = :by',
         ExpressionAttributeNames: { '#e': eventId },
+        ExpressionAttributeValues: { ':at': now(), ':by': user },
+        ReturnValues: 'ALL_NEW',
+      }));
+      return result.Attributes;
+    },
+
+    // Attachments are recorded in a files map on the trip, keyed by file id.
+    async addFile(tripId, fileId, file, user, retried = false) {
+      const at = now();
+      try {
+        const result = await write(new lib.UpdateCommand({
+          TableName: table,
+          Key: { id: tripId },
+          ConditionExpression: 'attribute_exists(id) AND size(files) < :max',
+          UpdateExpression: 'SET files.#f = :file, updatedAt = :at, updatedBy = :by',
+          ExpressionAttributeNames: { '#f': fileId },
+          ExpressionAttributeValues: { ':file': { ...file, createdAt: at, createdBy: user }, ':at': at, ':by': user, ':max': MAX_FILES },
+          ReturnValues: 'ALL_NEW',
+        }));
+        return result.Attributes;
+      } catch (error) {
+        if (!(error instanceof NotFound) && !isMissingMap(error)) throw error;
+        const item = await this.getTrip(tripId);
+        if (!item) throw new NotFound('Not found');
+        if (item.files || retried) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
+        await write(new lib.UpdateCommand({
+          TableName: table,
+          Key: { id: tripId },
+          ConditionExpression: 'attribute_exists(id)',
+          UpdateExpression: 'SET files = if_not_exists(files, :empty)',
+          ExpressionAttributeValues: { ':empty': {} },
+        }));
+        return this.addFile(tripId, fileId, file, user, true);
+      }
+    },
+
+    async updateFile(tripId, fileId, { name, eventId }, user) {
+      const result = await write(new lib.UpdateCommand({
+        TableName: table,
+        Key: { id: tripId },
+        ConditionExpression: 'attribute_exists(id) AND attribute_exists(files.#f)',
+        UpdateExpression: 'SET files.#f.#n = :name, files.#f.eventId = :event, updatedAt = :at, updatedBy = :by',
+        ExpressionAttributeNames: { '#f': fileId, '#n': 'name' },
+        ExpressionAttributeValues: { ':name': name, ':event': eventId, ':at': now(), ':by': user },
+        ReturnValues: 'ALL_NEW',
+      }));
+      return result.Attributes;
+    },
+
+    async deleteFile(tripId, fileId, user) {
+      const result = await write(new lib.UpdateCommand({
+        TableName: table,
+        Key: { id: tripId },
+        ConditionExpression: 'attribute_exists(id) AND attribute_exists(files.#f)',
+        UpdateExpression: 'REMOVE files.#f SET updatedAt = :at, updatedBy = :by',
+        ExpressionAttributeNames: { '#f': fileId },
         ExpressionAttributeValues: { ':at': now(), ':by': user },
         ReturnValues: 'ALL_NEW',
       }));

@@ -1,11 +1,17 @@
 'use strict';
 
+const crypto = require('crypto');
 const auth = require('./auth');
 const { loadConfig, NotConfigured } = require('./config');
+const { createFiles } = require('./s3');
 const { createStore, NotFound, TooLarge } = require('./store');
 const {
-  BadRequest, EVENT_ID, SHARE_TOKEN, TRIP_ID, compareSummaries, parseEvent, parseTrip, toApiTrip, toSharedTrip, toSummary,
+  BadRequest, EVENT_ID, FILE_ID, MAX_FILES, SHARE_TOKEN, TRIP_ID, compareSummaries, newFileId,
+  parseEvent, parseFileUpdate, parseTrip, parseUpload, toApiTrip, toSummary,
 } = require('./trips');
+
+// Recorded as the editor when someone changes a trip through its share link.
+const GUEST = 'share-link';
 
 const SECURITY_HEADERS = {
   'cache-control': 'no-store',
@@ -33,6 +39,12 @@ function redirect(location, cookies) {
   return { statusCode: 302, headers: { ...SECURITY_HEADERS, location }, ...(cookies ? { cookies } : {}), body: '' };
 }
 
+function sameToken(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function errorPage(statusCode, message, cookies) {
@@ -40,7 +52,7 @@ function errorPage(statusCode, message, cookies) {
     statusCode,
     headers: { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8' },
     ...(cookies ? { cookies } : {}),
-    body: `<!doctype html><meta charset="utf-8"><title>Plan</title>
+    body: `<!doctype html><meta charset="utf-8"><title>DL Travel Plan</title>
 <body style="font-family:system-ui;max-width:32rem;margin:4rem auto">
 <h1>Sign-in problem</h1><p>${escapeHtml(message)}</p><p><a href="/auth/login">Try again</a></p></body>`,
   };
@@ -65,13 +77,17 @@ function readBody(event) {
 function createHandler(deps = {}) {
   const getConfig = deps.loadConfig || loadConfig;
   const store = deps.store || createStore();
+  const files = deps.files || createFiles();
   const fetchImpl = deps.fetchImpl || ((...args) => fetch(...args));
   const clock = deps.now || Date.now;
 
-  async function requireSession(event) {
-    const session = auth.getSession(event, await getConfig(), clock());
-    if (!session) throw new HttpError(401, 'Sign in to do that');
-    return session;
+  async function optionalSession(event) {
+    try {
+      return auth.getSession(event, await getConfig(), clock());
+    } catch (error) {
+      if (error instanceof NotConfigured) return null;
+      throw error;
+    }
   }
 
   // Cookies are SameSite=Lax; also insist that writes come from our own pages.
@@ -79,10 +95,26 @@ function createHandler(deps = {}) {
     if (header(event, 'origin') !== process.env.SITE_URL) throw new HttpError(403, 'Cross-site request refused');
   }
 
+  // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip,
+  // but can't see other trips, delete it or change its link. The token comes in a header (or ?token= for images).
+  async function access(event, tripId) {
+    const session = await optionalSession(event);
+    if (session) return { user: session.name || session.user, member: true };
+    const token = header(event, 'x-plan-token') || (event.queryStringParameters || {}).token;
+    if (!token || tripId === undefined) throw new HttpError(401, 'Sign in to do that');
+    const item = SHARE_TOKEN.test(token) ? await store.getTrip(tripId) : null;
+    if (!item || !item.shareToken || !sameToken(token, item.shareToken)) throw new HttpError(403, 'This link no longer works');
+    return { user: GUEST, member: false };
+  }
+
   async function getTrip(id) {
     const item = await store.getTrip(id);
     if (!item) throw new NotFound('Trip not found');
     return item;
+  }
+
+  function checkEvent(item, eventId) {
+    if (eventId && !(item.events || {})[eventId]) throw new BadRequest('Unknown event');
   }
 
   async function api(method, parts, event) {
@@ -96,29 +128,26 @@ function createHandler(deps = {}) {
         throw error;
       }
     }
-    // Friends open a trip through its share link without signing in.
+    // Old /s/<token> links: find the trip so the page can move to /plan/<id>?token=<token>.
     if (parts[0] === 'shared' && parts.length === 2 && method === 'GET') {
       const item = SHARE_TOKEN.test(parts[1]) ? await store.getSharedTrip(parts[1]) : null;
       if (!item) throw new NotFound('This link is no longer shared');
-      let session = null;
-      try {
-        session = auth.getSession(event, await getConfig(), clock());
-      } catch (error) {
-        if (!(error instanceof NotConfigured)) throw error;
-      }
-      // Signed-in members also get the trip id so they can jump to the editor.
-      return json(200, session ? { ...toSharedTrip(item), tripId: item.id } : toSharedTrip(item));
+      return json(200, { id: item.id });
     }
     if (parts[0] !== 'trips') throw new NotFound('Not found');
-    const [, tripId, sub, eventId] = parts;
+    const [, tripId, sub, subId] = parts;
     if (tripId !== undefined && !TRIP_ID.test(tripId)) throw new NotFound('Trip not found');
-    if (eventId !== undefined && !EVENT_ID.test(eventId)) throw new NotFound('Event not found');
+    if (sub === 'events' && subId !== undefined && !EVENT_ID.test(subId)) throw new NotFound('Event not found');
+    if (sub === 'files' && subId !== undefined && !FILE_ID.test(subId)) throw new NotFound('File not found');
 
     if (method !== 'GET') requireSameOrigin(event);
-    const session = await requireSession(event);
-    const user = session.name || session.user;
+    const { user, member } = await access(event, tripId);
+    const membersOnly = () => {
+      if (!member) throw new HttpError(403, 'Sign in to do that');
+    };
 
     if (parts.length === 1) {
+      membersOnly();
       if (method === 'GET') {
         const trips = (await store.listTrips()).map(toSummary).sort(compareSummaries);
         return json(200, { trips });
@@ -129,11 +158,14 @@ function createHandler(deps = {}) {
       if (method === 'GET') return json(200, toApiTrip(await getTrip(tripId)));
       if (method === 'PUT') return json(200, toApiTrip(await store.updateTrip(tripId, parseTrip(readBody(event)), user)));
       if (method === 'DELETE') {
+        membersOnly();
         await store.deleteTrip(tripId);
+        await files.removeTrip(tripId);
         return json(200, { deleted: tripId });
       }
     }
     if (sub === 'share' && parts.length === 3) {
+      membersOnly();
       if (method === 'POST') return json(200, toApiTrip(await store.shareTrip(tripId, user)));
       if (method === 'DELETE') return json(200, toApiTrip(await store.unshareTrip(tripId, user)));
     }
@@ -143,10 +175,45 @@ function createHandler(deps = {}) {
         return json(201, { eventId: id, trip: toApiTrip(trip) });
       }
       if (parts.length === 4 && method === 'PUT') {
-        return json(200, { trip: toApiTrip(await store.updateEvent(tripId, eventId, parseEvent(readBody(event)), user)) });
+        return json(200, { trip: toApiTrip(await store.updateEvent(tripId, subId, parseEvent(readBody(event)), user)) });
       }
       if (parts.length === 4 && method === 'DELETE') {
-        return json(200, { trip: toApiTrip(await store.deleteEvent(tripId, eventId, user)) });
+        return json(200, { trip: toApiTrip(await store.deleteEvent(tripId, subId, user)) });
+      }
+    }
+    if (sub === 'files') {
+      // 1. Ask for an upload URL, 2. PUT the bytes straight to storage, 3. PUT /files/<id> to keep it.
+      if (parts.length === 3 && method === 'POST') {
+        const upload = parseUpload(readBody(event));
+        const item = await getTrip(tripId);
+        checkEvent(item, upload.eventId);
+        if (Object.keys(item.files || {}).length >= MAX_FILES) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
+        const fileId = newFileId();
+        const { url, headers } = files.uploadUrl(tripId, fileId, upload);
+        return json(201, { fileId, uploadUrl: url, uploadHeaders: headers });
+      }
+      if (parts.length === 4 && method === 'GET') {
+        const file = ((await getTrip(tripId)).files || {})[subId];
+        if (!file) throw new NotFound('File not found');
+        const params = event.queryStringParameters || {};
+        return redirect(files.downloadUrl(tripId, subId, file, { download: params.download === '1' }));
+      }
+      if (parts.length === 4 && method === 'PUT') {
+        const update = parseFileUpdate(readBody(event));
+        const item = await getTrip(tripId);
+        checkEvent(item, update.eventId);
+        // Rename, or move to another event (or to the trip itself).
+        if ((item.files || {})[subId]) return json(200, { trip: toApiTrip(await store.updateFile(tripId, subId, update, user)) });
+        const uploaded = await files.uploaded(tripId, subId);
+        if (!uploaded) throw new NotFound('Upload not found. Try again.');
+        const file = parseUpload({ ...update, size: uploaded.size, type: uploaded.type });
+        await files.keep(tripId, subId);
+        return json(201, { trip: toApiTrip(await store.addFile(tripId, subId, file, user)) });
+      }
+      if (parts.length === 4 && method === 'DELETE') {
+        const trip = await store.deleteFile(tripId, subId, user);
+        await files.remove(tripId, subId);
+        return json(200, { trip: toApiTrip(trip) });
       }
     }
     throw new HttpError(405, 'Method not allowed');

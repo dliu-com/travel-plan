@@ -61,6 +61,7 @@ test('trip and share pages are rewritten to the app shell', () => {
   // eslint-disable-next-line no-new-func
   const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
   const uri = (u: string) => handler({ request: { uri: u } }).uri;
+  expect(uri('/plan/20261000')).toBe('/index.html');
   expect(uri('/trips/kyoto-abcdefghij')).toBe('/index.html');
   expect(uri('/s/AAAAAAAAAAAAAAAAAAAAAAAA')).toBe('/index.html');
   expect(uri('/app.js')).toBe('/app.js');
@@ -85,8 +86,25 @@ test('pages are not indexed and only load our own scripts', () => {
     ResponseHeadersPolicyConfig: Match.objectLike({
       CustomHeadersConfig: { Items: [Match.objectLike({ Header: 'X-Robots-Tag' })] },
       SecurityHeadersConfig: Match.objectLike({
-        ContentSecurityPolicy: Match.objectLike({ ContentSecurityPolicy: Match.stringLikeRegexp("script-src 'self';") }),
+        ContentSecurityPolicy: Match.objectLike({ ContentSecurityPolicy: Match.anyValue() }),
       }),
     }),
+  });
+  const policy = Object.values(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'))[0] as any;
+  const csp = JSON.stringify(policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy.ContentSecurityPolicy);
+  expect(csp).toContain("script-src 'self';");
+  expect(csp).toContain("object-src 'none'");
+  expect(csp).not.toContain('unsafe-inline');
+});
+
+test('attachments live in a private bucket that only accepts uploads from the site', () => {
+  template.hasResourceProperties('AWS::S3::Bucket', {
+    PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true },
+    CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ['PUT'], AllowedHeaders: ['content-type'] })] },
+    LifecycleConfiguration: { Rules: Match.arrayWith([Match.objectLike({ Prefix: 'pending/', ExpirationInDays: 1, Status: 'Enabled' })]) },
+  });
+  template.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain', Properties: Match.objectLike({ CorsConfiguration: Match.anyValue() }) });
+  template.hasResourceProperties('AWS::Lambda::Function', {
+    Environment: { Variables: Match.objectLike({ FILES_BUCKET: Match.anyValue() }) },
   });
 });

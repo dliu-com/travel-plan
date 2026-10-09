@@ -25,10 +25,11 @@ const ROOT = path.join(__dirname, '..');
 export const PARAMETER_PREFIX = '/travel-plan';
 export const TRAFFIC_SITE_KEY = 'plan';
 
-// Serves the single-page app for trip pages (/trips/<id>) and share links (/s/<token>).
+// Serves the single-page app for trip pages (/plan/<id>) and old links (/trips/<id>, /s/<token>).
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
-  if (request.uri.indexOf('/trips/') === 0 || request.uri.indexOf('/s/') === 0) request.uri = '/index.html';
+  var uri = request.uri;
+  if (uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0) request.uri = '/index.html';
   return request;
 }`;
 
@@ -66,6 +67,26 @@ export class TravelPlanStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // Attachments: private, uploaded and downloaded with presigned URLs from the API.
+    // Uploads land in pending/ and are moved to trips/<id>/ once confirmed; abandoned ones expire.
+    const filesBucket = new s3.Bucket(this, 'FilesBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      versioned: false,
+      removalPolicy: RemovalPolicy.RETAIN,
+      cors: [{
+        allowedMethods: [s3.HttpMethods.PUT],
+        allowedOrigins: [siteUrl],
+        allowedHeaders: ['content-type'],
+        maxAge: 3600,
+      }],
+      lifecycleRules: [
+        { id: 'expire-pending-uploads', prefix: 'pending/', expiration: Duration.days(1) },
+        { id: 'abort-multipart', abortIncompleteMultipartUploadAfter: Duration.days(1) },
+      ],
+    });
+
     // ---------- API ----------
     const apiHandler = new lambda.Function(this, 'ApiHandler', {
       runtime: lambda.Runtime.NODEJS_22_X,
@@ -78,6 +99,7 @@ export class TravelPlanStack extends Stack {
         SITE_URL: siteUrl,
         ROOT_DOMAIN: rootDomain,
         TABLE_NAME: table.tableName,
+        FILES_BUCKET: filesBucket.bucketName,
         PARAMETER_PREFIX,
       },
       logGroup: new logs.LogGroup(this, 'ApiLogs', {
@@ -86,6 +108,8 @@ export class TravelPlanStack extends Stack {
       }),
     });
     table.grantReadWriteData(apiHandler);
+    filesBucket.grantReadWrite(apiHandler);
+    filesBucket.grantDelete(apiHandler);
     apiHandler.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameters'],
       resources: [this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: PARAMETER_PREFIX.slice(1) + '/*' })],
@@ -117,7 +141,13 @@ export class TravelPlanStack extends Stack {
     const headers = new cloudfront.ResponseHeadersPolicy(this, 'SiteHeaders', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://files.dliu.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          // Images and uploads go straight to the attachments bucket.
+          contentSecurityPolicy: Fn.join('', [
+            "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; ",
+            'img-src \'self\' data: blob: https://files.dliu.com https://', filesBucket.bucketRegionalDomainName, '; ',
+            'connect-src \'self\' https://', filesBucket.bucketRegionalDomainName, '; ',
+            "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+          ]),
           override: true,
         },
         contentTypeOptions: { override: true },
@@ -131,7 +161,7 @@ export class TravelPlanStack extends Stack {
     });
 
     const rewrite = new cloudfront.Function(this, 'TripPathRewrite', {
-      comment: 'Serve index.html for /trips/<id> and /s/<token>',
+      comment: 'Serve index.html for /plan/<id> and old /trips/, /s/ links',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(REWRITE_FUNCTION_CODE),
     });
@@ -222,6 +252,7 @@ export class TravelPlanStack extends Stack {
     new CfnOutput(this, 'SiteUrl', { value: siteUrl });
     new CfnOutput(this, 'AuthRedirectUri', { value: Fn.join('', [siteUrl, '/auth/callback']) });
     new CfnOutput(this, 'TableName', { value: table.tableName });
+    new CfnOutput(this, 'FilesBucketName', { value: filesBucket.bucketName });
     new CfnOutput(this, 'ApiFunctionName', { value: apiHandler.functionName });
   }
 }

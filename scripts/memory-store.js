@@ -2,7 +2,7 @@
 
 // In-memory stand-in for lambda/api/store.js, used by the tests and the local dev server.
 const { NotFound, TooLarge } = require('../lambda/api/store');
-const { MAX_EVENTS, newEventId, newShareToken, newTripId } = require('../lambda/api/trips');
+const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId } = require('../lambda/api/trips');
 
 function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
   const trips = new Map();
@@ -39,7 +39,9 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
     },
     async createTrip(fields, user) {
       const at = now();
-      const item = { id: newTripId(fields.title), ...fields, events: {}, createdAt: at, updatedAt: at, updatedBy: user };
+      const id = nextTripId(trips.keys(), at);
+      if (!id) throw new TooLarge('Too many trips this month');
+      const item = { id, ...fields, events: {}, files: {}, createdAt: at, updatedAt: at, updatedBy: user };
       trips.set(item.id, item);
       return clone(item);
     },
@@ -68,6 +70,25 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
       const trip = need(tripId);
       if (!trip.events[eventId]) throw new NotFound('Not found');
       delete trip.events[eventId];
+      return clone(touch(trip, user));
+    },
+    async addFile(tripId, fileId, file, user) {
+      const trip = need(tripId);
+      trip.files = trip.files || {};
+      if (Object.keys(trip.files).length >= MAX_FILES) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
+      trip.files[fileId] = { ...file, createdAt: now(), createdBy: user };
+      return clone(touch(trip, user));
+    },
+    async updateFile(tripId, fileId, { name, eventId }, user) {
+      const trip = need(tripId);
+      if (!trip.files || !trip.files[fileId]) throw new NotFound('Not found');
+      Object.assign(trip.files[fileId], { name, eventId });
+      return clone(touch(trip, user));
+    },
+    async deleteFile(tripId, fileId, user) {
+      const trip = need(tripId);
+      if (!trip.files || !trip.files[fileId]) throw new NotFound('Not found');
+      delete trip.files[fileId];
       return clone(touch(trip, user));
     },
   };
