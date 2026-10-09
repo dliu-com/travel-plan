@@ -102,7 +102,7 @@ async function handle(req, res) {
     res.writeHead(result.statusCode, result.headers);
     return res.end(result.body);
   }
-  let file = url.pathname === '/' || /^\/(plan|trips|s)\//.test(url.pathname) ? '/index.html' : url.pathname;
+  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/(about|security)\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
   file = path.join(WEB, path.normalize(file));
   if (!file.startsWith(WEB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404);

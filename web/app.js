@@ -314,7 +314,6 @@
   const PREVIEW_TYPES = /^image\/(png|jpe?g|gif|webp|avif)$/;
   const formatSize = (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
   const fileIcon = (type) => (type.startsWith('image/') ? '🖼️' : type === 'application/pdf' ? '📕' : type.startsWith('video/') ? '🎞️' : type.startsWith('audio/') ? '🎵' : '📄');
-  const filesOf = (trip, eventId) => (trip.files || []).filter((f) => f.eventId === eventId);
 
   function fileUrl(trip, file, download) {
     const query = new URLSearchParams();
@@ -363,7 +362,7 @@
 
   // Each file: ask the API for an upload URL, send the bytes straight to storage, then tell the API to keep it.
   let uploading = false;
-  async function uploadFiles(list, eventId) {
+  async function uploadFiles(list) {
     const files = [...list];
     if (!files.length) return;
     if (uploading) {
@@ -379,11 +378,11 @@
         if (file.size > MAX_FILE_BYTES) throw new Error(t(`“${file.name}”超过 50 MB。`, `“${file.name}” is larger than 50 MB.`));
         setStatus(t(`正在上传 ${label}…`, `Uploading ${label}…`));
         const tripId = state.trip.id;
-        const upload = await api('POST', `/api/trips/${tripId}/files`, { name: file.name, size: file.size, type: file.type, eventId });
+        const upload = await api('POST', `/api/trips/${tripId}/files`, { name: file.name, size: file.size, type: file.type });
         await putFile(upload.uploadUrl, upload.uploadHeaders, file, (part) => {
           setStatus(t(`正在上传 ${label}… ${Math.round(part * 100)}%`, `Uploading ${label}… ${Math.round(part * 100)}%`));
         });
-        const { trip } = await api('PUT', `/api/trips/${tripId}/files/${upload.fileId}`, { name: file.name, eventId });
+        const { trip } = await api('PUT', `/api/trips/${tripId}/files/${upload.fileId}`, { name: file.name });
         state.trip = trip;
         done += 1;
       }
@@ -409,18 +408,18 @@
     }
   }
 
-  function attachButton(eventId, text) {
+  function attachButton(text) {
     const input = el('input', {
       type: 'file',
       multiple: true,
       hidden: true,
-      onchange: (e) => { uploadFiles(e.target.files, eventId); e.target.value = ''; },
+      onchange: (e) => { uploadFiles(e.target.files); e.target.value = ''; },
     });
     return el('span', { class: 'attach' }, [input, el('button', { type: 'button', class: 'link', text, onclick: () => input.click() })]);
   }
 
-  // Drop files on the trip's file section or on an event to attach them there.
-  function dropTarget(node, eventId) {
+  // Drop files on the trip's file section to attach them.
+  function dropTarget(node) {
     const hasFiles = (e) => [...(e.dataTransfer ? e.dataTransfer.types : [])].includes('Files');
     node.addEventListener('dragover', (e) => {
       if (!hasFiles(e)) return;
@@ -434,7 +433,7 @@
       if (!e.dataTransfer.files.length) return;
       e.preventDefault();
       e.stopPropagation();
-      uploadFiles(e.dataTransfer.files, eventId);
+      uploadFiles(e.dataTransfer.files);
     });
     return node;
   }
@@ -443,19 +442,19 @@
   window.addEventListener('drop', (e) => e.preventDefault());
 
   function tripFiles(trip, editable) {
-    const files = filesOf(trip, '');
+    const files = trip.files || [];
     if (!files.length && !editable) return null;
     const section = el('section', { class: 'trip-files' }, [
       el('div', { class: 'section-head' }, [
         el('h2', { text: t('文件', 'Files') }),
         files.length > 0 && el('span', { class: 'count', text: String(files.length) }),
         el('span', { class: 'spacer' }),
-        editable && attachButton('', t('📎 添加文件', '📎 Attach files')),
+        editable && attachButton(t('📎 添加文件', '📎 Attach files')),
       ]),
       fileList(trip, files, editable)
         || el('p', { class: 'hint', text: t('机票、酒店确认单、地图……拖放文件到这里，或点“添加文件”。', 'Tickets, bookings, maps… Drop files here or use “Attach files”.') }),
     ]);
-    return editable ? dropTarget(section, '') : section;
+    return editable ? dropTarget(section) : section;
   }
 
   // ---------- trip post ----------
@@ -515,26 +514,22 @@
 
   function eventItem(trip, event, editable, letter) {
     const link = safeLink(event.link);
-    const files = filesOf(trip, event.id);
-    const hasMore = Boolean(event.notes || link || files.length || editable);
+    const hasMore = Boolean(event.notes || link || editable);
     const li = el('li', { class: 'event', 'data-status': event.status || 'none' }, [
       el('div', { class: 'time', text: event.time || '' }),
       el('div', { class: 'body' }, [
         el('div', { class: 'head' }, [
           statusBadge(event, letter),
           el('h3', { text: event.title }),
-          files.length > 0 && el('span', { class: 'clip', title: t(`${files.length} 个附件`, `${files.length} attached`), text: `📎 ${files.length}` }),
           event.place && el('p', { class: 'place' }, [
             el('a', { href: mapsUrl(event.place), target: '_blank', rel: 'noopener noreferrer', text: `📍 ${event.place}` }),
           ]),
         ]),
         event.notes && el('p', { class: 'notes', text: event.notes }),
         link && el('a', { class: 'ext', href: link, target: '_blank', rel: 'noopener noreferrer', text: `${linkLabel(link)} ↗` }),
-        fileList(trip, files, editable),
         editable && el('div', { class: 'actions' }, [
           el('button', { class: 'link', type: 'button', text: t('编辑', 'Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
           el('button', { class: 'link danger', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
-          attachButton(event.id, t('📎 附件', '📎 Attach')),
           statusSelect(event.status, {
             class: 'quick-status',
             'aria-label': t('状态', 'Status'),
@@ -556,7 +551,6 @@
       ]),
     ]);
     if (hasMore) li.classList.add('has-more');
-    if (editable) dropTarget(li, event.id);
     if (view.openEvents.has(event.id)) li.classList.add('open');
     // Compact view: tap an event to see its notes, link and edit actions.
     const toggle = () => {
@@ -702,9 +696,7 @@
   }
 
   async function deleteEvent(event) {
-    const attached = filesOf(state.trip, event.id).length;
-    const note = attached ? t(`\n它的 ${attached} 个附件会移到行程文件中。`, `\nIts ${attached} attached file(s) will move to the trip's files.`) : '';
-    if (!confirm(t(`删除“${event.title}”？`, `Delete “${event.title}”?`) + note)) return;
+    if (!confirm(t(`删除“${event.title}”？`, `Delete “${event.title}”?`))) return;
     try {
       const { trip } = await api('DELETE', `/api/trips/${state.trip.id}/events/${event.id}`);
       state.trip = trip;
@@ -885,8 +877,23 @@
   // Trips created before /plan/<YYYYMMNN> addresses.
   const LEGACY_IDS = { 'spain-ibiza-67mrt9qxtc': '20261000' };
 
+  // /about and /security are public; the account line still shows who is signed in.
+  function renderInfo(page) {
+    state.trip = null;
+    show(page === 'about' ? window.PlanInfo.about(t) : window.PlanInfo.security(t));
+    document.title = `${page === 'about' ? t('关于', 'About') : t('安全', 'Security')} · ${brand()}`;
+    api('GET', '/api/me').then((me) => { state.me = me; renderAccount(); }).catch(() => {});
+  }
+
   async function start() {
     const path = location.pathname;
+    const info = path.match(/^\/(about|security)\/?$/);
+    markNav(info && info[1]);
+    main.classList.toggle('wide', Boolean(info));
+    if (info) {
+      renderInfo(info[1]);
+      return;
+    }
     const legacyShare = path.match(/^\/s\/([A-Za-z0-9_-]{24})\/?$/);
     const legacyTrip = path.match(/^\/trips\/([a-z0-9-]+)\/?$/);
     const plan = path.match(/^\/plan\/(\d{8})\/?$/);
@@ -943,8 +950,16 @@
     languages.classList.toggle('is-open', open);
     languageToggle.setAttribute('aria-expanded', String(open));
   };
+  function markNav(page) {
+    for (const a of document.querySelectorAll('[data-nav]')) {
+      if (a.dataset.nav === page) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
+  }
   function applyLanguage() {
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+    document.querySelector('[data-nav="about"]').textContent = t('关于', 'About');
+    document.querySelector('[data-nav="security"]').textContent = t('安全', 'Security');
     document.querySelector('.brand').textContent = brand();
     document.title = state.trip ? `${state.trip.title} · ${brand()}` : brand();
     languageToggle.setAttribute('aria-label', t('语言', 'Language'));

@@ -64,7 +64,14 @@ test('trip and share pages are rewritten to the app shell', () => {
   expect(uri('/plan/20261000')).toBe('/index.html');
   expect(uri('/trips/kyoto-abcdefghij')).toBe('/index.html');
   expect(uri('/s/AAAAAAAAAAAAAAAAAAAAAAAA')).toBe('/index.html');
+  expect(uri('/about')).toBe('/index.html');
+  expect(uri('/security/')).toBe('/index.html');
+  expect(uri('/about.txt')).toBe('/about.txt');
   expect(uri('/app.js')).toBe('/app.js');
+});
+
+test('the api cannot use up the shared account concurrency', () => {
+  template.hasResourceProperties('AWS::Lambda::Function', { ReservedConcurrentExecutions: 20 });
 });
 
 test('logs go to the traffic monitor under the plan site key', () => {
@@ -84,7 +91,10 @@ test('traffic logging can be turned off', () => {
 test('pages are not indexed and only load our own scripts', () => {
   template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
     ResponseHeadersPolicyConfig: Match.objectLike({
-      CustomHeadersConfig: { Items: [Match.objectLike({ Header: 'X-Robots-Tag' })] },
+      CustomHeadersConfig: { Items: [
+        Match.objectLike({ Header: 'X-Robots-Tag' }),
+        Match.objectLike({ Header: 'Permissions-Policy', Value: Match.stringLikeRegexp('camera=\\(\\)') }),
+      ] },
       SecurityHeadersConfig: Match.objectLike({
         ContentSecurityPolicy: Match.objectLike({ ContentSecurityPolicy: Match.anyValue() }),
       }),
