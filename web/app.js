@@ -602,7 +602,6 @@
             setTimeout(() => { button.textContent = t('复制', 'Copy'); }, 2500);
           },
         }),
-        el('a', { class: 'button', href: `/s/${trip.shareToken}`, target: '_blank', rel: 'noopener', text: t('预览', 'Preview') }),
         el('button', {
           text: t('新链接', 'New link'),
           title: t('让当前链接失效并创建新链接', 'Stop the current link working and create a new one'),
