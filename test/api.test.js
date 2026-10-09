@@ -140,7 +140,10 @@ describe('share links', () => {
     expect(view.json).not.toHaveProperty('id');
     expect(view.json).not.toHaveProperty('shareToken');
     expect(view.json).not.toHaveProperty('updatedBy');
+    expect(view.json).not.toHaveProperty('tripId');
 
+    const member = await call('GET', `/api/shared/${token}`);
+    expect(member.json.tripId).toBe(trip.id);
     expect((await call('GET', '/api/trips', { signedIn: false })).statusCode).toBe(401);
 
     await call('DELETE', `/api/trips/${trip.id}/share`);

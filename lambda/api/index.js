@@ -100,7 +100,14 @@ function createHandler(deps = {}) {
     if (parts[0] === 'shared' && parts.length === 2 && method === 'GET') {
       const item = SHARE_TOKEN.test(parts[1]) ? await store.getSharedTrip(parts[1]) : null;
       if (!item) throw new NotFound('This link is no longer shared');
-      return json(200, toSharedTrip(item));
+      let session = null;
+      try {
+        session = auth.getSession(event, await getConfig(), clock());
+      } catch (error) {
+        if (!(error instanceof NotConfigured)) throw error;
+      }
+      // Signed-in members also get the trip id so they can jump to the editor.
+      return json(200, session ? { ...toSharedTrip(item), tripId: item.id } : toSharedTrip(item));
     }
     if (parts[0] !== 'trips') throw new NotFound('Not found');
     const [, tripId, sub, eventId] = parts;
