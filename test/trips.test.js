@@ -31,12 +31,18 @@ describe('parseTrip', () => {
 
 describe('parseEvent', () => {
   test('accepts a full event and normalises the link', () => {
-    expect(parseEvent({ date: '2026-11-13', time: '06:30', title: 'Inari', place: 'Fushimi', notes: 'early', link: 'https://inari.jp' }))
-      .toEqual({ date: '2026-11-13', time: '06:30', title: 'Inari', place: 'Fushimi', notes: 'early', link: 'https://inari.jp/' });
+    expect(parseEvent({ date: '2026-11-13', time: '06:30', title: 'Inari', status: 'confirmed', place: 'Fushimi', notes: 'early', link: 'https://inari.jp' }))
+      .toEqual({ date: '2026-11-13', time: '06:30', title: 'Inari', status: 'confirmed', place: 'Fushimi', notes: 'early', link: 'https://inari.jp/' });
   });
 
   test('allows undated, untimed events', () => {
-    expect(parseEvent({ title: 'Maybe' })).toEqual({ date: '', time: '', title: 'Maybe', place: '', notes: '', link: '' });
+    expect(parseEvent({ title: 'Maybe' })).toEqual({ date: '', time: '', title: 'Maybe', status: '', place: '', notes: '', link: '' });
+  });
+
+  test('only accepts known statuses', () => {
+    for (const status of ['confirmed', 'planned', 'proposed', 'option']) expect(parseEvent({ title: 'x', status }).status).toBe(status);
+    expect(() => parseEvent({ title: 'x', status: 'booked' })).toThrow(/Status/);
+    expect(() => parseEvent({ title: 'x', status: 1 })).toThrow(/Status/);
   });
 
   test('rejects unsafe links and bad times', () => {
