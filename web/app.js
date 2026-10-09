@@ -5,6 +5,31 @@
   const statusEl = document.getElementById('status');
   const state = { me: { signedIn: false }, trip: null, editing: null };
 
+  // ---------- language: 中文 / English, same switch as DL Weiqi ----------
+  const LANGUAGE_KEY = 'plan-language';
+  let language = (() => {
+    let saved;
+    try { saved = localStorage.getItem(LANGUAGE_KEY); } catch { /* storage unavailable */ }
+    return ['zh', 'en'].includes(saved) ? saved : /^zh(?:-|$)/i.test(navigator.language || '') ? 'zh' : 'en';
+  })();
+  const t = (zh, en) => (language === 'zh' ? zh : en);
+  const locale = () => (language === 'zh' ? 'zh-CN' : 'en-GB');
+  // The API answers in English; show the common messages in Chinese too.
+  const SERVER_MESSAGES_ZH = {
+    'Sign in to do that': '请先登录。',
+    'Trip not found': '找不到这个行程。',
+    'Event not found': '找不到这个安排。',
+    'This link is no longer shared': '此链接已停止分享。',
+    'Cross-site request refused': '请求来源无效。',
+    'Invalid JSON': '请求格式无效。',
+    'Not found': '页面不存在。',
+    'Method not allowed': '不支持此请求方法。',
+    'Title is required': '请填写标题。',
+    'End date is before the start date': '结束日期早于开始日期。',
+    'Link must be a full URL starting with https://': '链接须为以 https:// 开头的完整网址。',
+    'Link must start with http:// or https://': '链接须以 http:// 或 https:// 开头。',
+  };
+
   // ---------- helpers ----------
   function el(tag, props = {}, children = []) {
     const node = document.createElement(tag);
@@ -44,7 +69,8 @@
     const response = await fetch(path, init);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(data.error || `Request failed (${response.status})`);
+      const message = data.error || t(`请求失败（${response.status}）`, `Request failed (${response.status})`);
+      const error = new Error((language === 'zh' && SERVER_MESSAGES_ZH[message]) || message);
       error.status = response.status;
       throw error;
     }
@@ -53,7 +79,7 @@
 
   // Dates are calendar days (YYYY-MM-DD), always handled in UTC so they never shift.
   const toDate = (iso) => new Date(`${iso}T00:00:00Z`);
-  const fmt = (iso, options) => toDate(iso).toLocaleDateString('en-GB', { timeZone: 'UTC', ...options });
+  const fmt = (iso, options) => toDate(iso).toLocaleDateString(locale(), { timeZone: 'UTC', ...options });
   const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / 86400000);
   const addDays = (iso, n) => new Date(toDate(iso).getTime() + n * 86400000).toISOString().slice(0, 10);
   const todayIso = () => {
@@ -68,20 +94,25 @@
     if (s === e) return fmt(s, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     const sameYear = s.slice(0, 4) === e.slice(0, 4);
     const sameMonth = sameYear && s.slice(0, 7) === e.slice(0, 7);
+    const days = dayDiff(s, e) + 1;
+    if (language === 'zh') {
+      const start = fmt(s, sameYear ? { month: 'long', day: 'numeric' } : { year: 'numeric', month: 'long', day: 'numeric' });
+      return `${start} – ${fmt(e, { year: 'numeric', month: 'long', day: 'numeric' })} · ${days} 天`;
+    }
     const startOptions = sameMonth ? { day: 'numeric' } : sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' };
-    return `${fmt(s, startOptions)} – ${fmt(e, { day: 'numeric', month: 'short', year: 'numeric' })} · ${dayDiff(s, e) + 1} days`;
+    return `${fmt(s, startOptions)} – ${fmt(e, { day: 'numeric', month: 'short', year: 'numeric' })} · ${days} days`;
   }
 
   function when(trip) {
     const today = todayIso();
     const start = trip.startDate;
     const end = trip.endDate || trip.startDate;
-    if (!start) return 'Planning';
+    if (!start) return t('筹划中', 'Planning');
     if (today < start) {
       const n = dayDiff(today, start);
-      return n === 1 ? 'Tomorrow' : `In ${n} days`;
+      return n === 1 ? t('明天', 'Tomorrow') : t(`${n} 天后`, `In ${n} days`);
     }
-    return today <= end ? 'Happening now' : '';
+    return today <= end ? t('进行中', 'Happening now') : '';
   }
 
   function kicker(trip) {
@@ -91,7 +122,7 @@
       status && el('span', { class: 'when', text: status }),
       trip.destination && el('span', { text: trip.destination }),
       range && el('span', { text: range }),
-      trip.shared && el('span', { class: 'badge', text: 'Shared' }),
+      trip.shared && el('span', { class: 'badge', text: t('已分享', 'Shared') }),
     ]);
   }
 
@@ -106,15 +137,17 @@
       return url;
     }
   }
-  const formatStamp = (iso, by) => (iso
-    ? `Last updated ${new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}${by ? ` by ${by}` : ''}`
-    : '');
+  function formatStamp(iso, by) {
+    if (!iso) return '';
+    const at = new Date(iso).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+    return t(`最后更新：${at}${by ? `（${by}）` : ''}`, `Last updated ${at}${by ? ` by ${by}` : ''}`);
+  }
 
   function renderAccount() {
     const account = document.getElementById('account');
     account.replaceChildren(state.me.signedIn
-      ? el('span', {}, [`${state.me.name || state.me.user} · `, el('a', { href: '/auth/logout', text: 'Sign out' })])
-      : el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: 'Sign in' }));
+      ? el('span', {}, [`${state.me.name || state.me.user} · `, el('a', { href: '/auth/logout', text: t('退出登录', 'Sign out') })])
+      : el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') }));
   }
 
   function show(...nodes) {
@@ -135,14 +168,42 @@
 
   function signInCard(message) {
     return el('section', { class: 'signin' }, [
-      el('h1', { text: 'Our trip plans' }),
+      el('h1', { text: t('我们的行程', 'Our trip plans') }),
       el('p', { text: message }),
       el('a', { class: 'ms-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}` }, [
         microsoftLogo(),
-        el('span', { text: 'Sign in with Microsoft' }),
+        el('span', { text: t('使用 Microsoft 登录', 'Sign in with Microsoft') }),
       ]),
     ]);
   }
+
+  // ---------- statuses & view preferences ----------
+  const STATUSES = ['confirmed', 'planned', 'proposed', 'option'];
+  const STATUS_TEXT = {
+    confirmed: { zh: ['已确认', '已预订或已固定'], en: ['Confirmed', 'Booked or fixed'] },
+    planned: { zh: ['计划', '已决定，尚未预订'], en: ['Planned', 'Decided, not booked yet'] },
+    proposed: { zh: ['提议', '建议，尚未商定'], en: ['Proposed', 'Suggested, not agreed yet'] },
+    option: { zh: ['待选', '多个备选之一'], en: ['Option', 'One of several alternatives'] },
+  };
+  const statusName = (s) => STATUS_TEXT[s][language][0];
+  const statusHint = (s) => STATUS_TEXT[s][language][1];
+  const statusLabel = (s) => (s === 'confirmed' ? `✓ ${statusName(s)}` : statusName(s));
+
+  const prefs = {
+    get(key, fallback) {
+      try {
+        const value = JSON.parse(localStorage.getItem(`plan.${key}`));
+        return value == null ? fallback : value;
+      } catch {
+        return fallback;
+      }
+    },
+    set(key, value) {
+      try { localStorage.setItem(`plan.${key}`, JSON.stringify(value)); } catch { /* storage unavailable */ }
+    },
+  };
+  // compact: one line per event; filter: show one status only; openEvents: expanded in compact view.
+  const view = { compact: prefs.get('compact', true), filter: '', openEvents: new Set() };
 
   // ---------- forms ----------
   const field = (label, input) => el('label', {}, [label, input]);
@@ -156,7 +217,7 @@
       error,
       el('div', { class: 'form-actions' }, [
         save,
-        el('button', { type: 'button', text: 'Cancel', onclick: onCancel }),
+        el('button', { type: 'button', text: t('取消', 'Cancel'), onclick: onCancel }),
         el('span', { class: 'spacer' }),
         extra,
       ]),
@@ -185,11 +246,11 @@
 
   function tripForm(trip, options) {
     const inputs = {
-      title: el('input', { required: true, maxlength: 120, value: trip.title || '', placeholder: 'Autumn in Kyoto' }),
-      destination: el('input', { maxlength: 120, value: trip.destination || '', placeholder: 'Kyoto, Japan' }),
+      title: el('input', { required: true, maxlength: 120, value: trip.title || '', placeholder: t('京都之秋', 'Autumn in Kyoto') }),
+      destination: el('input', { maxlength: 120, value: trip.destination || '', placeholder: t('日本京都', 'Kyoto, Japan') }),
       startDate: el('input', { type: 'date', value: trip.startDate || '' }),
       endDate: el('input', { type: 'date', value: trip.endDate || '' }),
-      intro: el('textarea', { maxlength: 10000, rows: 4, placeholder: 'A few words about the trip — who is coming, the idea, what to expect.' }),
+      intro: el('textarea', { maxlength: 10000, rows: 4, placeholder: t('简单介绍这次旅行：谁同行、大致想法、期待什么。', 'A few words about the trip — who is coming, the idea, what to expect.') }),
     };
     inputs.intro.value = trip.intro || '';
     inputs.startDate.addEventListener('change', () => {
@@ -197,28 +258,42 @@
       if (s && (!inputs.endDate.value || inputs.endDate.value < s)) inputs.endDate.value = s;
     });
     return form(options.title, inputs, [
-      field('Title', inputs.title),
-      el('div', { class: 'fields' }, [field('Destination', inputs.destination), field('From', inputs.startDate), field('To', inputs.endDate)]),
-      field('Intro', inputs.intro),
-    ], { submitLabel: 'Save', ...options });
+      field(t('标题', 'Title'), inputs.title),
+      el('div', { class: 'fields' }, [
+        field(t('目的地', 'Destination'), inputs.destination),
+        field(t('开始', 'From'), inputs.startDate),
+        field(t('结束', 'To'), inputs.endDate),
+      ]),
+      field(t('简介', 'Intro'), inputs.intro),
+    ], { submitLabel: t('保存', 'Save'), ...options });
+  }
+
+  function statusSelect(current, props = {}) {
+    const select = el('select', props, [
+      el('option', { value: '', text: t('无状态', 'No status') }),
+      ...STATUSES.map((s) => el('option', { value: s, text: `${statusLabel(s)} — ${statusHint(s)}` })),
+    ]);
+    select.value = current || '';
+    return select;
   }
 
   function eventForm(event, options) {
     const inputs = {
       date: el('input', { type: 'date', value: event.date || '' }),
       time: el('input', { type: 'time', value: event.time || '' }),
-      title: el('input', { required: true, maxlength: 200, value: event.title || '', placeholder: 'Fushimi Inari at sunrise' }),
-      place: el('input', { maxlength: 200, value: event.place || '', placeholder: 'Fushimi Inari Taisha, Kyoto' }),
+      title: el('input', { required: true, maxlength: 200, value: event.title || '', placeholder: t('日出时去伏见稻荷', 'Fushimi Inari at sunrise') }),
+      place: el('input', { maxlength: 200, value: event.place || '', placeholder: t('京都伏见稻荷大社', 'Fushimi Inari Taisha, Kyoto') }),
       link: el('input', { type: 'url', maxlength: 2000, value: event.link || '', placeholder: 'https://…' }),
-      notes: el('textarea', { maxlength: 4000, rows: 3, placeholder: 'Details, meeting point, what to bring…' }),
+      notes: el('textarea', { maxlength: 4000, rows: 3, placeholder: t('细节、集合地点、要带的东西…', 'Details, meeting point, what to bring…') }),
+      status: statusSelect(event.status),
     };
     inputs.notes.value = event.notes || '';
     return form(options.title, inputs, [
-      el('div', { class: 'fields' }, [field('Date', inputs.date), field('Time', inputs.time)]),
-      field('What', inputs.title),
-      el('div', { class: 'fields' }, [field('Where', inputs.place), field('Link', inputs.link)]),
-      field('Notes', inputs.notes),
-    ], { submitLabel: 'Save event', ...options });
+      el('div', { class: 'fields' }, [field(t('日期', 'Date'), inputs.date), field(t('时间', 'Time'), inputs.time), field(t('状态', 'Status'), inputs.status)]),
+      field(t('事项', 'What'), inputs.title),
+      el('div', { class: 'fields' }, [field(t('地点', 'Where'), inputs.place), field(t('链接', 'Link'), inputs.link)]),
+      field(t('备注', 'Notes'), inputs.notes),
+    ], { submitLabel: t('保存安排', 'Save event'), ...options });
   }
 
   // ---------- trip post ----------
@@ -236,43 +311,114 @@
   }
 
   function dayHeading(trip, date) {
-    if (!date) return { title: 'Anytime', sub: 'Not tied to a day yet' };
+    if (!date) return { title: t('待定', 'Anytime'), sub: t('尚未确定日期', 'Not tied to a day yet') };
     const sub = fmt(date, { weekday: 'long', day: 'numeric', month: 'long' });
     if (trip.startDate && date >= trip.startDate && (!trip.endDate || date <= trip.endDate)) {
-      return { title: `Day ${dayDiff(trip.startDate, date) + 1}`, sub };
+      const n = dayDiff(trip.startDate, date) + 1;
+      return { title: t(`第 ${n} 天`, `Day ${n}`), sub };
     }
     return { title: fmt(date, { weekday: 'short' }), sub: fmt(date, { day: 'numeric', month: 'long', year: 'numeric' }) };
   }
 
-  const rerender = () => renderTrip();
+  const rerender = () => (state.shared ? renderShared(state.shared) : renderTrip());
   const closeForm = () => { state.editing = null; rerender(); };
 
-  function eventItem(trip, event, editable) {
+  // Back-to-back options on a day are alternatives to pick from: label them A, B, C…
+  function optionLetters(events) {
+    const letters = new Map();
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) run.forEach((event, i) => letters.set(event.id, String.fromCharCode(65 + i)));
+      run = [];
+    };
+    for (const event of events) {
+      if (event.status === 'option') run.push(event);
+      else flush();
+    }
+    flush();
+    return letters;
+  }
+
+  function statusBadge(event, letter) {
+    if (!event.status) return null;
+    const label = event.status === 'option' && letter ? `${statusName('option')} ${letter}` : statusLabel(event.status);
+    return el('span', { class: 'status', 'data-status': event.status, title: statusHint(event.status), text: label });
+  }
+
+  async function saveEvent(trip, event, changes) {
+    const { id, ...fields } = event;
+    const { trip: updated } = await api('PUT', `/api/trips/${trip.id}/events/${id}`, { ...fields, ...changes });
+    state.trip = updated;
+  }
+
+  function eventItem(trip, event, editable, letter) {
     const link = safeLink(event.link);
-    const li = el('li', { class: 'event' }, [
+    const hasMore = Boolean(event.notes || link || editable);
+    const li = el('li', { class: 'event', 'data-status': event.status || 'none' }, [
       el('div', { class: 'time', text: event.time || '' }),
       el('div', { class: 'body' }, [
-        el('h3', { text: event.title }),
-        event.place && el('p', { class: 'place' }, [
-          el('a', { href: mapsUrl(event.place), target: '_blank', rel: 'noopener noreferrer', text: `📍 ${event.place}` }),
+        el('div', { class: 'head' }, [
+          statusBadge(event, letter),
+          el('h3', { text: event.title }),
+          event.place && el('p', { class: 'place' }, [
+            el('a', { href: mapsUrl(event.place), target: '_blank', rel: 'noopener noreferrer', text: `📍 ${event.place}` }),
+          ]),
         ]),
         event.notes && el('p', { class: 'notes', text: event.notes }),
         link && el('a', { class: 'ext', href: link, target: '_blank', rel: 'noopener noreferrer', text: `${linkLabel(link)} ↗` }),
         editable && el('div', { class: 'actions' }, [
-          el('button', { class: 'link', text: 'Edit', onclick: () => { state.editing = event.id; rerender(); } }),
-          el('button', { class: 'link danger', text: 'Delete', onclick: () => deleteEvent(event) }),
+          el('button', { class: 'link', type: 'button', text: t('编辑', 'Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
+          el('button', { class: 'link danger', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
+          statusSelect(event.status, {
+            class: 'quick-status',
+            'aria-label': t('状态', 'Status'),
+            onchange: async (e) => {
+              e.target.disabled = true;
+              try {
+                await saveEvent(trip, event, { status: e.target.value });
+                rerender();
+                const name = e.target.value ? statusName(e.target.value) : t('无状态', 'no status');
+                setStatus(t(`已将“${event.title}”标记为${name}。`, `Marked “${event.title}” as ${name.toLowerCase()}.`));
+              } catch (error) {
+                e.target.disabled = false;
+                e.target.value = event.status || '';
+                setStatus(error.message, true);
+              }
+            },
+          }),
         ]),
       ]),
     ]);
+    if (hasMore) li.classList.add('has-more');
+    if (view.openEvents.has(event.id)) li.classList.add('open');
+    // Compact view: tap an event to see its notes, link and edit actions.
+    const toggle = () => {
+      if (!view.compact || !hasMore) return;
+      const open = li.classList.toggle('open');
+      if (open) view.openEvents.add(event.id);
+      else view.openEvents.delete(event.id);
+    };
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, select, input, textarea, form') || String(getSelection())) return;
+      toggle();
+    });
+    if (hasMore) {
+      li.tabIndex = 0;
+      li.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === li) {
+          e.preventDefault();
+          toggle();
+        }
+      });
+    }
     if (editable && state.editing === event.id) {
       li.append(eventForm(event, {
-        title: 'Edit event',
+        title: t('编辑安排', 'Edit event'),
         onCancel: closeForm,
         onSave: async (values) => {
-          const { trip: updated } = await api('PUT', `/api/trips/${trip.id}/events/${event.id}`, values);
-          state.trip = updated;
+          await saveEvent(trip, event, values);
           closeForm();
-          setStatus('Event saved.');
+          setStatus(t('安排已保存。', 'Event saved.'));
         },
       }));
     }
@@ -281,13 +427,13 @@
 
   function newEventForm(date) {
     return eventForm({ date }, {
-      title: 'Add event',
+      title: t('添加安排', 'Add event'),
       onCancel: closeForm,
       onSave: async (values) => {
         const { trip } = await api('POST', `/api/trips/${state.trip.id}/events`, values);
         state.trip = trip;
         closeForm();
-        setStatus(`Added “${values.title}”.`);
+        setStatus(t(`已添加“${values.title}”。`, `Added “${values.title}”.`));
       },
     });
   }
@@ -297,38 +443,104 @@
     rerender();
   }
 
+  // Which days are folded, remembered per trip (or per share link) in this browser.
+  const foldKey = (trip) => `folded:${trip.id || location.pathname}`;
+  function foldedDays(trip) {
+    const saved = prefs.get(foldKey(trip), null);
+    if (Array.isArray(saved)) return new Set(saved);
+    // First visit during the trip: fold the days that are already over.
+    const today = todayIso();
+    const inProgress = trip.startDate && trip.startDate <= today && today <= (trip.endDate || trip.startDate);
+    return new Set(inProgress ? trip.events.map((e) => e.date).filter((d) => d && d < today) : []);
+  }
+  function saveFolds(trip) {
+    prefs.set(foldKey(trip), [...main.querySelectorAll('details.day:not([open])')].map((d) => d.dataset.date));
+  }
+
+  function viewBar(trip) {
+    const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    for (const event of trip.events) if (event.status) counts[event.status] += 1;
+    const segment = (compact, text) => el('button', {
+      type: 'button',
+      text,
+      'aria-pressed': String(view.compact === compact),
+      onclick: () => { view.compact = compact; prefs.set('compact', compact); rerender(); },
+    });
+    const foldAll = (fold) => () => {
+      prefs.set(foldKey(trip), fold ? groupByDay(trip, { includeEmptyDays: true }).map(([d]) => d) : []);
+      rerender();
+    };
+    const chips = STATUSES.filter((s) => counts[s]).map((s) => el('button', {
+      type: 'button',
+      class: 'chip',
+      'data-status': s,
+      title: t(`${statusHint(s)}——只看这些`, `${statusHint(s)} — show only these`),
+      'aria-pressed': String(view.filter === s),
+      onclick: () => { view.filter = view.filter === s ? '' : s; rerender(); },
+    }, [el('span', { class: 'dot', 'data-status': s }), `${statusName(s)} `, el('b', { text: counts[s] })]));
+    return el('div', { class: 'viewbar' }, [
+      el('div', { class: 'segmented', role: 'group', 'aria-label': t('视图', 'View') }, [segment(true, t('简洁', 'Compact')), segment(false, t('详细', 'Detailed'))]),
+      el('button', { type: 'button', class: 'link', text: t('全部展开', 'Expand all'), onclick: foldAll(false) }),
+      el('button', { type: 'button', class: 'link', text: t('全部折叠', 'Collapse all'), onclick: foldAll(true) }),
+      chips.length > 0 && el('div', { class: 'chips' }, [
+        ...chips,
+        view.filter && el('button', { type: 'button', class: 'link', text: t('显示全部', 'Show all'), onclick: () => { view.filter = ''; rerender(); } }),
+      ]),
+    ]);
+  }
+
   function postBody(trip, { editable }) {
-    const days = groupByDay(trip, { includeEmptyDays: editable });
+    const days = groupByDay(trip, { includeEmptyDays: editable && !view.filter });
     // A new event for a day that isn't listed yet (e.g. "Anytime") gets its own section.
     if (editable && typeof state.editing === 'string' && state.editing.startsWith('new:')) {
       const date = state.editing.slice(4);
       if (!days.some(([d]) => d === date)) days.push([date, []]);
     }
-    const nodes = days.map(([date, events]) => {
+    const folded = foldedDays(trip);
+    const nodes = [];
+    for (const [date, allEvents] of days) {
+      const letters = optionLetters(allEvents);
+      const events = view.filter ? allEvents.filter((e) => e.status === view.filter) : allEvents;
+      const adding = editable && state.editing === `new:${date}`;
+      if (view.filter && !events.length && !adding) continue;
       const { title, sub } = dayHeading(trip, date);
-      return el('section', { class: 'day' }, [
-        el('div', { class: 'day-head' }, [
-          el('h2', { text: title }),
-          el('span', { class: 'date', text: sub }),
-          editable && el('button', { class: 'link', text: '+ Add', onclick: () => openNewEvent(date) }),
+      const open = Boolean(view.filter) || adding || events.some((e) => e.id === state.editing) || !folded.has(date);
+      nodes.push(el('details', { class: 'day', 'data-date': date, open }, [
+        el('summary', { class: 'day-head', onclick: () => setTimeout(() => saveFolds(trip), 0) }, [
+          el('div', { class: 'day-title' }, [
+            el('h2', { text: title }),
+            el('span', { class: 'date', text: sub }),
+            el('span', { class: 'dots', 'aria-hidden': 'true' }, allEvents.map((e) => el('span', { class: 'dot', 'data-status': e.status || 'none' }))),
+            editable && el('button', {
+              class: 'link',
+              type: 'button',
+              text: t('+ 添加', '+ Add'),
+              onclick: (e) => { e.preventDefault(); e.stopPropagation(); openNewEvent(date); },
+            }),
+          ]),
+          events.length > 0 && el('p', {
+            class: 'day-peek',
+            text: events.map((e) => [e.time, letters.has(e.id) ? `${letters.get(e.id)}.` : '', e.title].filter(Boolean).join(' ')).join('  ·  '),
+          }),
         ]),
         events.length
-          ? el('ol', { class: 'events' }, events.map((event) => eventItem(trip, event, editable)))
-          : el('p', { class: 'nothing', text: 'Nothing planned yet.' }),
-        editable && state.editing === `new:${date}` && newEventForm(date),
-      ]);
-    });
-    if (!nodes.length) nodes.push(el('p', { class: 'empty', text: editable ? 'No events yet — add the first one.' : 'Nothing planned yet.' }));
-    return nodes;
+          ? el('ol', { class: 'events' }, events.map((event) => eventItem(trip, event, editable, letters.get(event.id))))
+          : el('p', { class: 'nothing', text: t('暂无安排。', 'Nothing planned yet.') }),
+        adding && newEventForm(date),
+      ]));
+    }
+    if (!nodes.length) nodes.push(el('p', { class: 'empty', text: editable ? t('还没有安排——添加第一个吧。', 'No events yet — add the first one.') : t('暂无安排。', 'Nothing planned yet.') }));
+    const list = el('div', { class: `days${view.compact ? ' compact' : ''}` }, nodes);
+    return trip.events.length ? [viewBar(trip), list] : [list];
   }
 
   async function deleteEvent(event) {
-    if (!confirm(`Delete “${event.title}”?`)) return;
+    if (!confirm(t(`删除“${event.title}”？`, `Delete “${event.title}”?`))) return;
     try {
       const { trip } = await api('DELETE', `/api/trips/${state.trip.id}/events/${event.id}`);
       state.trip = trip;
       rerender();
-      setStatus('Event deleted.');
+      setStatus(t('安排已删除。', 'Event deleted.'));
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -353,20 +565,24 @@
   function sharePanel(trip) {
     if (!trip.shareToken) {
       return el('div', { class: 'share' }, [
-        el('p', { text: 'Only signed-in people can see this trip. Create a link to let friends view it (read-only) without signing in.' }),
-        el('div', { class: 'row' }, [el('button', { class: 'primary', text: 'Create share link', onclick: shareAction(() => setShare('POST'), 'Share link ready.') })]),
+        el('p', { text: t('只有登录的成员能看到这个行程。创建链接后，朋友无需登录即可查看（只读）。', 'Only signed-in people can see this trip. Create a link to let friends view it (read-only) without signing in.') }),
+        el('div', { class: 'row' }, [el('button', {
+          class: 'primary',
+          text: t('创建分享链接', 'Create share link'),
+          onclick: shareAction(() => setShare('POST'), t('分享链接已创建。', 'Share link ready.')),
+        })]),
       ]);
     }
     const url = `${location.origin}/s/${trip.shareToken}`;
-    const input = el('input', { readonly: true, value: url, 'aria-label': 'Share link', onfocus: (e) => e.target.select() });
+    const input = el('input', { readonly: true, value: url, 'aria-label': t('分享链接', 'Share link'), onfocus: (e) => e.target.select() });
     return el('div', { class: 'share' }, [
-      el('p', { text: 'Anyone with this link can view the trip (read-only) without signing in.' }),
+      el('p', { text: t('任何人拿到此链接都无需登录即可查看（只读）。', 'Anyone with this link can view the trip (read-only) without signing in.') }),
       el('div', { class: 'row' }, [
         input,
         el('button', {
           class: 'primary',
           type: 'button',
-          text: 'Copy',
+          text: t('复制', 'Copy'),
           onclick: async (e) => {
             const button = e.currentTarget;
             input.focus();
@@ -382,22 +598,22 @@
                 copied = true;
               } catch { /* fall through */ }
             }
-            button.textContent = copied ? 'Copied ✓' : 'Press ⌘C';
-            setTimeout(() => { button.textContent = 'Copy'; }, 2500);
+            button.textContent = copied ? t('已复制 ✓', 'Copied ✓') : t('请按 ⌘C', 'Press ⌘C');
+            setTimeout(() => { button.textContent = t('复制', 'Copy'); }, 2500);
           },
         }),
-        el('a', { class: 'button', href: `/s/${trip.shareToken}`, target: '_blank', rel: 'noopener', text: 'Preview' }),
+        el('a', { class: 'button', href: `/s/${trip.shareToken}`, target: '_blank', rel: 'noopener', text: t('预览', 'Preview') }),
         el('button', {
-          text: 'New link',
-          title: 'Stop the current link working and create a new one',
-          onclick: () => confirm('Create a new link? The current link will stop working.')
-            && shareAction(async () => { await setShare('DELETE'); await setShare('POST'); }, 'New share link ready.')(),
+          text: t('新链接', 'New link'),
+          title: t('让当前链接失效并创建新链接', 'Stop the current link working and create a new one'),
+          onclick: () => confirm(t('创建新链接？当前链接将失效。', 'Create a new link? The current link will stop working.'))
+            && shareAction(async () => { await setShare('DELETE'); await setShare('POST'); }, t('新分享链接已创建。', 'New share link ready.'))(),
         }),
         el('button', {
           class: 'danger',
-          text: 'Stop sharing',
-          onclick: () => confirm('Stop sharing? The link will stop working immediately.')
-            && shareAction(() => setShare('DELETE'), 'Sharing stopped.')(),
+          text: t('停止分享', 'Stop sharing'),
+          onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
+            && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
         }),
       ]),
     ]);
@@ -406,22 +622,22 @@
   function renderTrip() {
     const trip = state.trip;
     const editingTrip = state.editing === 'trip';
-    document.title = `${trip.title} · Plan`;
+    document.title = `${trip.title} · ${t('DL 行程', 'DL Plan')}`;
     const head = editingTrip
       ? tripForm(trip, {
-        title: 'Edit trip',
+        title: t('编辑行程', 'Edit trip'),
         onCancel: closeForm,
         onSave: async (values) => {
           state.trip = await api('PUT', `/api/trips/${trip.id}`, values);
           closeForm();
-          setStatus('Trip saved.');
+          setStatus(t('行程已保存。', 'Trip saved.'));
         },
         extra: el('button', {
           type: 'button',
           class: 'danger',
-          text: 'Delete trip',
+          text: t('删除行程', 'Delete trip'),
           onclick: async () => {
-            if (!confirm(`Delete “${trip.title}” and all its events? This cannot be undone.`)) return;
+            if (!confirm(t(`删除“${trip.title}”及其所有安排？此操作无法撤销。`, `Delete “${trip.title}” and all its events? This cannot be undone.`))) return;
             try {
               await api('DELETE', `/api/trips/${trip.id}`);
               location.href = '/';
@@ -440,9 +656,9 @@
     show(el('article', { class: 'post' }, [
       head,
       !editingTrip && el('div', { class: 'toolbar' }, [
-        el('a', { class: 'button', href: '/', text: '← All trips' }),
-        el('button', { text: 'Edit trip', onclick: () => { state.editing = 'trip'; rerender(); } }),
-        el('button', { class: 'primary', text: '+ Add event', onclick: () => openNewEvent(trip.startDate || '') }),
+        el('a', { class: 'button', href: '/', text: t('← 全部行程', '← All trips') }),
+        el('button', { text: t('编辑行程', 'Edit trip'), onclick: () => { state.editing = 'trip'; rerender(); } }),
+        el('button', { class: 'primary', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
       ]),
       !editingTrip && sharePanel(trip),
       ...postBody(trip, { editable: true }),
@@ -450,7 +666,7 @@
   }
 
   function renderShared(trip) {
-    document.title = `${trip.title} · Plan`;
+    document.title = `${trip.title} · ${t('DL 行程', 'DL Plan')}`;
     const editReturn = `${location.pathname}?edit=1`;
     show(el('article', { class: 'post' }, [
       el('header', { class: 'post-head' }, [
@@ -460,8 +676,8 @@
       ]),
       el('div', { class: 'toolbar' }, [
         trip.tripId
-          ? el('a', { class: 'button primary', href: `/trips/${trip.tripId}`, text: 'Edit trip' })
-          : el('a', { class: 'button', href: `/auth/login?return=${encodeURIComponent(editReturn)}`, text: 'Sign in to edit' }),
+          ? el('a', { class: 'button primary', href: `/trips/${trip.tripId}`, text: t('编辑行程', 'Edit trip') })
+          : el('a', { class: 'button', href: `/auth/login?return=${encodeURIComponent(editReturn)}`, text: t('登录以编辑', 'Sign in to edit') }),
       ]),
       ...postBody(trip, { editable: false }),
       el('footer', { class: 'shared', text: formatStamp(trip.updatedAt) }),
@@ -472,17 +688,17 @@
   async function renderIndex() {
     if (!state.me.signedIn) {
       show(signInCard(state.me.configured === false
-        ? 'Sign-in is not configured yet.'
-        : 'Trips are private. Sign in with your dliu.com Microsoft account — friends open trips through share links.'));
+        ? t('尚未配置登录。', 'Sign-in is not configured yet.')
+        : t('行程不公开。请使用 dliu.com 的 Microsoft 账号登录——朋友可通过分享链接查看。', 'Trips are private. Sign in with your dliu.com Microsoft account — friends open trips through share links.')));
       return;
     }
     const { trips } = await api('GET', '/api/trips');
     const formSlot = el('div');
-    const newButton = el('button', { class: 'primary', text: '+ New trip' });
+    const newButton = el('button', { class: 'primary', text: t('+ 新行程', '+ New trip') });
     newButton.addEventListener('click', () => {
       newButton.hidden = true;
       formSlot.replaceChildren(tripForm({}, {
-        title: 'New trip',
+        title: t('新行程', 'New trip'),
         onCancel: () => { formSlot.replaceChildren(); newButton.hidden = false; },
         onSave: async (values) => {
           const trip = await api('POST', '/api/trips', values);
@@ -491,7 +707,7 @@
       }));
     });
     show(
-      el('div', { class: 'page-head' }, [el('h1', { text: 'Trips' }), newButton]),
+      el('div', { class: 'page-head' }, [el('h1', { text: t('行程', 'Trips') }), newButton]),
       formSlot,
       trips.length
         ? el('ul', { class: 'posts' }, trips.map((trip) => el('li', {}, [
@@ -501,7 +717,7 @@
             trip.excerpt && el('p', { text: trip.excerpt }),
           ]),
         ])))
-        : el('p', { class: 'empty', text: 'No trips yet. Start planning one!' }),
+        : el('p', { class: 'empty', text: t('还没有行程，开始计划一个吧！', 'No trips yet. Start planning one!') }),
     );
   }
 
@@ -512,7 +728,7 @@
     const trip = path.match(/^\/trips\/([a-z0-9-]+)\/?$/);
     try {
       if (shared) {
-        setStatus('Loading…');
+        setStatus(t('正在载入…', 'Loading…'));
         const [data, me] = await Promise.all([
           api('GET', `/api/shared/${shared[1]}`),
           api('GET', '/api/me').catch(() => ({ signedIn: false })),
@@ -525,6 +741,7 @@
           return;
         }
         setStatus('');
+        state.shared = data;
         renderShared(data);
         return;
       }
@@ -532,10 +749,10 @@
       renderAccount();
       if (trip) {
         if (!state.me.signedIn) {
-          show(signInCard('Sign in to see and edit this trip. Friends open trips through share links.'));
+          show(signInCard(t('登录后可查看和编辑此行程。朋友可通过分享链接查看。', 'Sign in to see and edit this trip. Friends open trips through share links.')));
           return;
         }
-        setStatus('Loading…');
+        setStatus(t('正在载入…', 'Loading…'));
         state.trip = await api('GET', `/api/trips/${trip[1]}`);
         setStatus('');
         renderTrip();
@@ -544,10 +761,56 @@
       await renderIndex();
     } catch (error) {
       show();
-      if (error.status === 404) setStatus(shared ? 'This link isn’t shared any more.' : 'Trip not found.', true);
+      if (error.status === 404) setStatus(shared ? t('此链接已停止分享。', 'This link isn’t shared any more.') : t('找不到这个行程。', 'Trip not found.'), true);
       else setStatus(error.message, true);
     }
   }
+
+  // Print the whole plan: every day unfolded, every note in full.
+  window.addEventListener('beforeprint', () => {
+    main.querySelectorAll('details.day').forEach((d) => { d.open = true; });
+    main.querySelectorAll('.days.compact').forEach((d) => d.classList.remove('compact'));
+  });
+  window.addEventListener('afterprint', () => { if (state.trip || state.shared) rerender(); });
+
+  // ---------- language switch ----------
+  const languageToggle = document.querySelector('.language-toggle');
+  const languages = document.getElementById('site-languages');
+  const setLanguagesOpen = (open) => {
+    languages.classList.toggle('is-open', open);
+    languageToggle.setAttribute('aria-expanded', String(open));
+  };
+  function applyLanguage() {
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+    document.querySelector('.brand').textContent = t('DL 行程', 'DL Plan');
+    if (!state.trip && !state.shared) document.title = t('DL 行程', 'DL Plan');
+    languageToggle.setAttribute('aria-label', t('语言', 'Language'));
+    for (const button of languages.querySelectorAll('[data-language]')) button.setAttribute('aria-pressed', String(button.dataset.language === language));
+  }
+  languages.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-language]');
+    if (!button) return;
+    setLanguagesOpen(false);
+    if (button.dataset.language === language) return;
+    language = button.dataset.language;
+    try { localStorage.setItem(LANGUAGE_KEY, language); } catch { /* storage unavailable */ }
+    applyLanguage();
+    renderAccount();
+    setStatus('');
+    if (state.trip || state.shared) rerender();
+    else start();
+  });
+  languageToggle.addEventListener('click', () => setLanguagesOpen(!languages.classList.contains('is-open')));
+  document.addEventListener('click', (event) => {
+    if (languages.classList.contains('is-open') && !languages.contains(event.target) && !languageToggle.contains(event.target)) setLanguagesOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && languages.classList.contains('is-open')) {
+      setLanguagesOpen(false);
+      languageToggle.focus();
+    }
+  });
+  applyLanguage();
 
   start();
 })();

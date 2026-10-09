@@ -8,6 +8,8 @@ const EVENT_ID = /^[A-Za-z0-9_-]{8,32}$/;
 const SHARE_TOKEN = /^[A-Za-z0-9_-]{24}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Where an event stands: booked/fixed, decided but not booked, suggested, or one of several alternatives.
+const STATUSES = ['confirmed', 'planned', 'proposed', 'option'];
 
 class BadRequest extends Error {}
 
@@ -47,6 +49,12 @@ function link(value) {
   return url.toString();
 }
 
+function status(value) {
+  if (value == null || value === '') return '';
+  if (!STATUSES.includes(value)) throw new BadRequest(`Status must be one of: ${STATUSES.join(', ')}`);
+  return value;
+}
+
 function parseTrip(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
   const trip = {
@@ -66,6 +74,7 @@ function parseEvent(input) {
     date: date(input.date, 'Date'),
     time: time(input.time, 'Time'),
     title: text(input.title, 'Title', 200, { required: true }),
+    status: status(input.status),
     place: text(input.place, 'Place', 200),
     notes: text(input.notes, 'Notes', 4000),
     link: link(input.link),
@@ -105,6 +114,7 @@ function toApiTrip(item) {
       date: event.date || '',
       time: event.time || '',
       title: event.title || '',
+      status: STATUSES.includes(event.status) ? event.status : '',
       place: event.place || '',
       notes: event.notes || '',
       link: event.link || '',
@@ -161,6 +171,7 @@ module.exports = {
   EVENT_ID,
   MAX_EVENTS,
   SHARE_TOKEN,
+  STATUSES,
   TRIP_ID,
   compareEvents,
   compareSummaries,

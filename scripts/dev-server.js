@@ -37,10 +37,11 @@ async function seed() {
     intro: 'Five days of temples, food and autumn leaves. Friends join from day 3.',
   }, 'Dev User');
   const events = [
-    { date: '2026-11-12', time: '15:40', title: 'Land at Kansai (KIX)', place: 'Kansai International Airport', notes: 'Haruka express to Kyoto Station.', link: '' },
-    { date: '2026-11-12', time: '19:00', title: 'Dinner in Pontocho', place: 'Pontocho Alley, Kyoto', notes: '', link: '' },
-    { date: '2026-11-13', time: '06:30', title: 'Fushimi Inari at sunrise', place: 'Fushimi Inari Taisha', notes: 'Go early to beat the crowds.', link: 'https://inari.jp/en/' },
-    { date: '2026-11-14', time: '', title: 'Arashiyama day', place: 'Arashiyama, Kyoto', notes: 'Bamboo grove, Tenryu-ji, boat ride.', link: '' },
+    { date: '2026-11-12', time: '15:40', title: 'Land at Kansai (KIX)', status: 'confirmed', place: 'Kansai International Airport', notes: 'Haruka express to Kyoto Station.', link: '' },
+    { date: '2026-11-12', time: '19:00', title: 'Dinner in Pontocho', status: 'planned', place: 'Pontocho Alley, Kyoto', notes: 'Somewhere small along the alley. Kaiseki is pricey; yakitori or obanzai are good casual options. Ask the hotel to book if we decide on a set menu.', link: '' },
+    { date: '2026-11-13', time: '06:30', title: 'Fushimi Inari at sunrise', status: 'option', place: 'Fushimi Inari Taisha', notes: 'Go early to beat the crowds.', link: 'https://inari.jp/en/' },
+    { date: '2026-11-13', time: '07:00', title: 'Sleep in, then Nishiki Market', status: 'option', place: 'Nishiki Market, Kyoto', notes: 'If jet lag wins.', link: '' },
+    { date: '2026-11-14', time: '', title: 'Arashiyama day', status: 'proposed', place: 'Arashiyama, Kyoto', notes: 'Bamboo grove, Tenryu-ji, boat ride.', link: '' },
     { date: '', time: '', title: 'Maybe: tea ceremony', place: '', notes: 'Book if we find a free afternoon.', link: '' },
   ];
   for (const event of events) await store.addEvent(trip.id, event, 'Dev User');
