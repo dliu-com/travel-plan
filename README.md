@@ -6,6 +6,7 @@ Private travel plans at **https://plan.dliu.com**, written like a blog: one trav
 - **Trip addresses** are `https://plan.dliu.com/plan/YYYYMMNN`: the year and month the trip was created, then a two-digit counter for that month (`20261000`, `20261001`, …).
 - **Share links** are `https://plan.dliu.com/plan/<id>?token=<token>`. Anyone holding one can view **and edit** that one trip (details, events, files) without signing in. They can't see other trips, delete the trip or manage sharing. On the plan page the Sharing row has *Share* (opens the device's share sheet, or copies the link) and *Create link*; once a link exists, *Share*, *Copy link* and *Stop sharing*. *Stop sharing* turns the link off immediately; sharing again makes a new link. Edits made through a link are recorded as "someone with the link". Old `/s/<token>` and `/trips/<id>` addresses redirect.
 - **Attachments.** Up to 200 files per trip and 50 MB each, attached to the trip itself (drag and drop onto the Files section, or 📎); events have no attachments of their own. Files go straight from the browser to a private S3 bucket using short-lived presigned URLs. Images, PDFs, text, audio and video open in the browser. Everything else, including HTML and SVG, always downloads as `application/octet-stream`.
+- **Export PDF.** The button opens the browser's print dialog ("Save as PDF"). The print stylesheet unfolds every day, drops the controls, and names the file after the plan title and dates.
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)

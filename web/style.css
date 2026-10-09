@@ -322,4 +322,5 @@ footer.shared { margin-top: 3rem; text-align: center; color: var(--muted); font-
 @media print {
   header.site, .site-nav, .toolbar, .share-fact, .actions, .viewbar, .day-head button, #status, .guest-note, .attach, .file-action, .add-description, .trip-files .hint, .danger-zone, .editable.empty { display: none !important; }
   body { background: #fff; }
+  .person { background: none; border: 1px solid #bbb; }
 }
