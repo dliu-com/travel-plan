@@ -915,6 +915,7 @@
       el('div', { class: 'toolbar' }, [
         !guest && el('a', { class: 'button', href: '/', text: t('← 全部行程', '← All travel plans') }),
         el('button', { class: 'primary', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
+        el('button', { type: 'button', text: t('导出 PDF', 'Export PDF'), title: t('在打印窗口中选择“另存为 PDF”', 'Choose “Save as PDF” in the print dialog'), onclick: () => window.print() }),
       ]),
       guest && el('p', { class: 'guest-note' }, [
         t('你正通过分享链接查看和编辑此行程。', 'You’re viewing and editing this travel plan through a share link. '),
@@ -1028,7 +1029,9 @@
   }
 
   // Print the whole plan: every day unfolded, every note in full.
+  // The document title becomes the PDF's default filename.
   window.addEventListener('beforeprint', () => {
+    if (state.trip) document.title = [state.trip.title, dateRange(state.trip)].filter(Boolean).join(' ');
     main.querySelectorAll('details.day').forEach((d) => { d.open = true; });
     main.querySelectorAll('.days.compact').forEach((d) => d.classList.remove('compact'));
   });
