@@ -62,3 +62,33 @@ test('listTrips pages through the table without loading events', async () => {
   expect(client.sent[0].input.ProjectionExpression).not.toContain('events');
   expect(client.sent[1].input.ExclusiveStartKey).toEqual({ id: 'a' });
 });
+
+test('createTrip numbers trips per month and takes the next number on a clash', async () => {
+  const client = fakeClient([
+    { Items: [{ id: '20261000' }, { id: 'old-slug-abcdefghij' }] },
+    conditionFailed(),
+    { Items: [{ id: '20261000' }, { id: '20261001' }] },
+    {},
+  ]);
+  const store = createStore({ client, table: 'Trips', now });
+  const trip = await store.createTrip({ title: 'Kyoto' }, 'Dewei');
+  expect(trip).toMatchObject({ id: '20261002', events: {}, files: {} });
+  expect(client.sent.map((c) => c.name)).toEqual(['ScanCommand', 'PutCommand', 'ScanCommand', 'PutCommand']);
+  expect(client.sent[1].input.Item.id).toBe('20261001');
+  expect(client.sent[3].input.ConditionExpression).toBe('attribute_not_exists(id)');
+});
+
+test('addFile creates the files map on older trips, then retries', async () => {
+  const missing = Object.assign(new Error('The document path provided in the update expression is invalid for update'), { name: 'ValidationException' });
+  const client = fakeClient([missing, { Item: { id: '20261000', events: {} } }, {}, { Attributes: { id: '20261000', files: { f: {} } } }]);
+  const store = createStore({ client, table: 'Trips', now });
+  const trip = await store.addFile('20261000', 'f', { name: 'a.pdf' }, 'Dewei');
+  expect(trip.files).toEqual({ f: {} });
+  expect(client.sent[2].input.UpdateExpression).toBe('SET files = if_not_exists(files, :empty)');
+  expect(client.sent[3].input.ExpressionAttributeValues[':file']).toMatchObject({ name: 'a.pdf', createdBy: 'Dewei' });
+});
+
+test('addFile reports a full trip as TooLarge', async () => {
+  const client = fakeClient([conditionFailed(), { Item: { id: '20261000', files: {} } }]);
+  await expect(createStore({ client, table: 'Trips', now }).addFile('20261000', 'f', {}, 'x')).rejects.toBeInstanceOf(TooLarge);
+});

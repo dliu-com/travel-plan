@@ -13,11 +13,13 @@ process.env.SITE_URL = SITE_URL;
 
 const auth = require('../lambda/api/auth');
 const { createHandler } = require('../lambda/api/index');
+const { createMemoryFiles } = require('./memory-files');
 const { createMemoryStore } = require('./memory-store');
 
 const config = { tenantId: 'dev', clientId: 'dev', clientSecret: 'dev-secret', allowedDomain: 'dliu.com' };
 const store = createMemoryStore();
-const handler = createHandler({ store, loadConfig: async () => config });
+const files = createMemoryFiles();
+const handler = createHandler({ store, files, loadConfig: async () => config });
 const WEB = path.join(__dirname, '..', 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 // Local cookies can't use the __Host- prefix over plain http, so rename them on the way in and out.
@@ -71,6 +73,28 @@ async function handle(req, res) {
     res.writeHead(302, { location: '/', 'set-cookie': `${LOCAL_SESSION}=; Path=/; Max-Age=0` });
     return res.end();
   }
+  // Stand-in for the attachments bucket: presigned PUTs land here and downloads are served from here.
+  if (url.pathname.startsWith('/dev-files/')) {
+    const key = decodeURIComponent(url.pathname.slice('/dev-files/'.length));
+    if (req.method === 'PUT' && key.startsWith('pending/')) {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      files.put(key, Buffer.concat(chunks), req.headers['content-type']);
+      res.writeHead(200);
+      return res.end();
+    }
+    const object = files.objects.get(key);
+    if (req.method !== 'GET' || !object) {
+      res.writeHead(404);
+      return res.end('Not found');
+    }
+    res.writeHead(200, {
+      'content-type': url.searchParams.get('response-content-type') || object.type,
+      'content-disposition': url.searchParams.get('response-content-disposition') || 'attachment',
+      'x-content-type-options': 'nosniff',
+    });
+    return res.end(object.body);
+  }
   if (url.pathname.startsWith('/api/')) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -78,7 +102,7 @@ async function handle(req, res) {
     res.writeHead(result.statusCode, result.headers);
     return res.end(result.body);
   }
-  let file = url.pathname === '/' || /^\/(trips|s)\//.test(url.pathname) ? '/index.html' : url.pathname;
+  let file = url.pathname === '/' || /^\/(plan|trips|s)\//.test(url.pathname) ? '/index.html' : url.pathname;
   file = path.join(WEB, path.normalize(file));
   if (!file.startsWith(WEB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404);

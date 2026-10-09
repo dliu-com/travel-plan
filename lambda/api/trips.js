@@ -3,7 +3,12 @@
 const crypto = require('crypto');
 
 const MAX_EVENTS = 300;
-const TRIP_ID = /^[a-z0-9-]{4,64}$/;
+const MAX_FILES = 200;
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+// Trip ids are the month the trip was created plus a counter: 20261000, 20261001, …
+const TRIP_ID = /^\d{8}$/;
+const FILE_ID = /^[A-Za-z0-9_-]{16}$/;
+const MIME_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
 const EVENT_ID = /^[A-Za-z0-9_-]{8,32}$/;
 const SHARE_TOKEN = /^[A-Za-z0-9_-]{24}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -62,7 +67,7 @@ function parseTrip(input) {
     destination: text(input.destination, 'Destination', 120),
     startDate: date(input.startDate, 'Start date'),
     endDate: date(input.endDate, 'End date'),
-    intro: text(input.intro, 'Intro', 10000),
+    intro: text(input.intro, 'Description', 10000),
   };
   if (trip.startDate && trip.endDate && trip.endDate < trip.startDate) throw new BadRequest('End date is before the start date');
   return trip;
@@ -81,16 +86,42 @@ function parseEvent(input) {
   };
 }
 
-// Readable, stable trip ids: "japan-autumn-k3x9q2m7ab". Non-latin titles just get the random part.
-function newTripId(title, random = crypto.randomBytes(8)) {
-  const slug = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
-  const suffix = BigInt(`0x${random.toString('hex')}`).toString(36).padStart(13, '0').slice(-10);
-  return slug ? `${slug}-${suffix}` : `trip-${suffix}`;
+// The next id for a trip created at `nowIso`: YYYYMM plus one more than the highest number used that month.
+// Numbers are never reused while a later trip from the same month exists. Returns null when the month is full.
+function nextTripId(existingIds, nowIso) {
+  const prefix = nowIso.slice(0, 4) + nowIso.slice(5, 7);
+  let highest = -1;
+  for (const id of existingIds) {
+    if (TRIP_ID.test(id) && id.startsWith(prefix)) highest = Math.max(highest, Number(id.slice(6)));
+  }
+  return highest >= 99 ? null : `${prefix}${String(highest + 1).padStart(2, '0')}`;
 }
 
 const newEventId = () => crypto.randomBytes(9).toString('base64url');
 const newShareToken = () => crypto.randomBytes(18).toString('base64url');
+const newFileId = () => crypto.randomBytes(12).toString('base64url');
+
+function eventRef(value) {
+  if (value == null || value === '') return '';
+  if (typeof value !== 'string' || !EVENT_ID.test(value)) throw new BadRequest('Unknown event');
+  return value;
+}
+
+// A file the browser is about to upload: what it is called, how big it is and where it belongs.
+function parseUpload(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
+  const name = text(input.name, 'File name', 200, { required: true });
+  if (!Number.isSafeInteger(input.size) || input.size < 1) throw new BadRequest('File is empty');
+  if (input.size > MAX_FILE_BYTES) throw new BadRequest(`Files can be at most ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+  const type = typeof input.type === 'string' && input.type.length <= 100 && MIME_TYPE.test(input.type)
+    ? input.type.toLowerCase() : 'application/octet-stream';
+  return { name, size: input.size, type, eventId: eventRef(input.eventId) };
+}
+
+function parseFileUpdate(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
+  return { name: text(input.name, 'File name', 200, { required: true }), eventId: eventRef(input.eventId) };
+}
 
 // Undated events go last; within a day, events without a time come first (all-day), then by time.
 function compareEvents(a, b) {
@@ -122,6 +153,17 @@ function toApiTrip(item) {
     }))
     .sort(compareEvents)
     .map(({ createdAt, ...event }) => event);
+  const files = Object.entries(item.files || {})
+    .map(([id, file]) => ({
+      id,
+      name: file.name || 'file',
+      size: file.size || 0,
+      type: file.type || 'application/octet-stream',
+      // A file whose event is gone shows up with the trip's own files.
+      eventId: file.eventId && item.events && item.events[file.eventId] ? file.eventId : '',
+      createdAt: file.createdAt || '',
+    }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));
   return {
     id: item.id,
     title: item.title,
@@ -130,16 +172,11 @@ function toApiTrip(item) {
     endDate: item.endDate || '',
     intro: item.intro || '',
     events,
+    files,
     shareToken: item.shareToken || '',
     updatedAt: item.updatedAt,
     updatedBy: item.updatedBy || '',
   };
-}
-
-// What friends see through a share link: no ids, tokens or editor names.
-function toSharedTrip(item) {
-  const { id, shareToken, updatedBy, ...trip } = toApiTrip(item);
-  return trip;
 }
 
 function toSummary(item) {
@@ -169,7 +206,10 @@ function compareSummaries(a, b) {
 module.exports = {
   BadRequest,
   EVENT_ID,
+  FILE_ID,
   MAX_EVENTS,
+  MAX_FILES,
+  MAX_FILE_BYTES,
   SHARE_TOKEN,
   STATUSES,
   TRIP_ID,
@@ -177,10 +217,12 @@ module.exports = {
   compareSummaries,
   newEventId,
   newShareToken,
-  newTripId,
+  newFileId,
+  nextTripId,
   parseEvent,
+  parseFileUpdate,
+  parseUpload,
   parseTrip,
   toApiTrip,
-  toSharedTrip,
   toSummary,
 };
