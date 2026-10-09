@@ -718,66 +718,61 @@
     };
   }
 
+  async function copyText(text) {
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch { /* fall back below */ }
+    }
+    const box = el('textarea', { readonly: true, class: 'offscreen' });
+    box.value = text;
+    document.body.append(box);
+    box.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch { /* not supported */ }
+    box.remove();
+    return copied;
+  }
+
+  // Sharing lives in the Sharing row of the plan header: Share, or Copy link and Stop sharing.
   function sharePanel(trip) {
     if (!trip.shareToken) {
-      return el('div', { class: 'share' }, [
-        el('div', { class: 'row' }, [
-          el('span', { class: 'off', text: t('未分享，仅登录成员可见', 'Not shared — only signed-in members can see it') }),
-          el('button', {
-            type: 'button',
-            class: 'small',
-            text: t('创建分享链接', 'Create share link'),
-            onclick: shareAction(() => setShare('POST'), t('分享链接已创建。', 'Share link ready.')),
-          }),
-        ]),
-        el('p', { class: 'hint', text: t('朋友无需登录即可用链接查看和编辑这个行程。', 'Friends can view and edit this travel plan with the link, without signing in.') }),
-      ]);
-    }
-    const url = `${location.origin}${tripPath(trip.id)}?token=${trip.shareToken}`;
-    const input = el('input', { readonly: true, value: url, 'aria-label': t('分享链接', 'Share link'), onfocus: (e) => e.target.select() });
-    return el('div', { class: 'share' }, [
-      el('div', { class: 'row' }, [
-        input,
-        el('button', {
-          class: 'primary small',
-          type: 'button',
-          text: t('复制', 'Copy'),
-          onclick: async (e) => {
-            const button = e.currentTarget;
-            input.focus();
-            input.select();
-            let copied = false;
-            try {
-              // execCommand copies the selected text synchronously and works where the async API is blocked.
-              copied = document.execCommand('copy');
-            } catch { /* fall through */ }
-            if (!copied && navigator.clipboard) {
-              try {
-                await navigator.clipboard.writeText(url);
-                copied = true;
-              } catch { /* fall through */ }
-            }
-            button.textContent = copied ? t('已复制 ✓', 'Copied ✓') : t('请按 ⌘C', 'Press ⌘C');
-            setTimeout(() => { button.textContent = t('复制', 'Copy'); }, 2500);
-          },
-        }),
+      return el('div', { class: 'share row' }, [
+        el('span', { class: 'off', text: t('未分享', 'Not shared') }),
         el('button', {
           type: 'button',
           class: 'small',
-          text: t('新链接', 'New link'),
-          title: t('让当前链接失效并创建新链接', 'Stop the current link working and create a new one'),
-          onclick: () => confirm(t('创建新链接？当前链接将失效。', 'Create a new link? The current link will stop working.'))
-            && shareAction(async () => { await setShare('DELETE'); await setShare('POST'); }, t('新分享链接已创建。', 'New share link ready.'))(),
+          text: t('分享', 'Share'),
+          title: t('创建链接，朋友无需登录即可查看和编辑这个行程', 'Make a link so friends can view and edit this travel plan without signing in'),
+          onclick: shareAction(() => setShare('POST'), t('已分享，点“复制链接”发给朋友。', 'Shared. Use “Copy link” to send it to friends.')),
         }),
-        el('button', {
-          type: 'button',
-          class: 'small danger',
-          text: t('停止分享', 'Stop sharing'),
-          onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
-            && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
-        }),
-      ]),
-      el('p', { class: 'hint', text: t('拿到链接的人无需登录即可查看和编辑这个行程（包括文件），但不能删除它或看到其他行程。', 'Anyone with the link can view and edit this travel plan (including files) without signing in, but can’t delete it or see other travel plans.') }),
+      ]);
+    }
+    const url = `${location.origin}${tripPath(trip.id)}?token=${trip.shareToken}`;
+    const copyLabel = t('复制链接', 'Copy link');
+    return el('div', { class: 'share row' }, [
+      el('span', { class: 'on', text: t('已分享', 'Shared') }),
+      el('button', {
+        type: 'button',
+        class: 'primary small',
+        text: copyLabel,
+        title: t('拿到链接的人无需登录即可查看和编辑这个行程（包括文件），但不能删除它或看到其他行程', 'Anyone with the link can view and edit this travel plan (including files) without signing in, but can’t delete it or see other travel plans'),
+        onclick: async (e) => {
+          const button = e.currentTarget;
+          const copied = await copyText(url);
+          if (!copied) prompt(t('复制这个链接：', 'Copy this link:'), url);
+          button.textContent = copied ? t('已复制 ✓', 'Copied ✓') : copyLabel;
+          setTimeout(() => { button.textContent = copyLabel; }, 2500);
+        },
+      }),
+      el('button', {
+        type: 'button',
+        class: 'small danger',
+        text: t('停止分享', 'Stop sharing'),
+        onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
+          && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
+      }),
     ]);
   }
 
