@@ -121,8 +121,6 @@ h1 .inline-edit input { font: inherit; padding: .1rem .4rem; }
 .meta { font-size: 13px; color: var(--muted); }
 
 .share.row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
-.share .off { color: var(--muted); margin-right: .3rem; }
-.share .on { color: var(--accent); font-weight: 600; margin-right: .3rem; }
 .offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }
 button.small { padding: .3rem .7rem; font-size: 14px; }
 
