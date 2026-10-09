@@ -1,6 +1,6 @@
 # travel-plan — DL Travel Plan
 
-Private trip plans at **https://plan.dliu.com**, written like a blog: one trip is one post with a description, attachments and events grouped by day.
+Private travel plans at **https://plan.dliu.com**, written like a blog: one travel plan is one post with its dates, destination, who's going, a description, attachments and events grouped by day. Click any of those details on the page to edit it in place. (In the code and API a travel plan is a "trip".)
 
 - **Private by default.** Visitors to plan.dliu.com don't see any trips. People in the dliu.com Microsoft 365 org sign in (Entra ID) and can read and edit every trip.
 - **Trip addresses** are `https://plan.dliu.com/plan/YYYYMMNN`: the year and month the trip was created, then a two-digit counter for that month (`20261000`, `20261001`, …).

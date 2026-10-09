@@ -33,7 +33,7 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
       return await send(command);
     } catch (error) {
       if (isConditionFailure(error)) throw new NotFound('Not found');
-      if (isTooLarge(error)) throw new TooLarge('This trip is too large to save more text');
+      if (isTooLarge(error)) throw new TooLarge('This travel plan is too large to save more text');
       throw error;
     }
   }
@@ -115,7 +115,7 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const at = now();
         const id = nextTripId(await this.tripIds(), at);
-        if (!id) throw new TooLarge('Too many trips this month');
+        if (!id) throw new TooLarge('Too many travel plans this month');
         const item = { id, ...fields, events: {}, files: {}, createdAt: at, updatedAt: at, updatedBy: user };
         try {
           await send(new lib.PutCommand({ TableName: table, Item: item, ConditionExpression: 'attribute_not_exists(id)' }));
@@ -166,7 +166,7 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
         return { id, trip: result.Attributes };
       } catch (error) {
         if (error instanceof NotFound && await this.getTrip(tripId)) {
-          throw new TooLarge(`A trip can have at most ${MAX_EVENTS} events`);
+          throw new TooLarge(`A travel plan can have at most ${MAX_EVENTS} events`);
         }
         throw error;
       }
@@ -222,7 +222,7 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
         if (!(error instanceof NotFound) && !isMissingMap(error)) throw error;
         const item = await this.getTrip(tripId);
         if (!item) throw new NotFound('Not found');
-        if (item.files || retried) throw new TooLarge(`A trip can have at most ${MAX_FILES} files`);
+        if (item.files || retried) throw new TooLarge(`A travel plan can have at most ${MAX_FILES} files`);
         await write(new lib.UpdateCommand({
           TableName: table,
           Key: { id: tripId },
