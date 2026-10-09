@@ -368,12 +368,22 @@
           type: 'button',
           text: 'Copy',
           onclick: async (e) => {
+            const button = e.currentTarget;
+            input.focus();
+            input.select();
+            let copied = false;
             try {
-              await navigator.clipboard.writeText(url);
-              e.target.textContent = 'Copied ✓';
-            } catch {
-              input.select();
+              // execCommand copies the selected text synchronously and works where the async API is blocked.
+              copied = document.execCommand('copy');
+            } catch { /* fall through */ }
+            if (!copied && navigator.clipboard) {
+              try {
+                await navigator.clipboard.writeText(url);
+                copied = true;
+              } catch { /* fall through */ }
             }
+            button.textContent = copied ? 'Copied ✓' : 'Press ⌘C';
+            setTimeout(() => { button.textContent = 'Copy'; }, 2500);
           },
         }),
         el('a', { class: 'button', href: `/s/${trip.shareToken}`, target: '_blank', rel: 'noopener', text: 'Preview' }),
@@ -441,11 +451,17 @@
 
   function renderShared(trip) {
     document.title = `${trip.title} · Plan`;
+    const editReturn = `${location.pathname}?edit=1`;
     show(el('article', { class: 'post' }, [
       el('header', { class: 'post-head' }, [
         kicker(trip),
         el('h1', { text: trip.title }),
         trip.intro && el('div', { class: 'intro', text: trip.intro }),
+      ]),
+      el('div', { class: 'toolbar' }, [
+        trip.tripId
+          ? el('a', { class: 'button primary', href: `/trips/${trip.tripId}`, text: 'Edit trip' })
+          : el('a', { class: 'button', href: `/auth/login?return=${encodeURIComponent(editReturn)}`, text: 'Sign in to edit' }),
       ]),
       ...postBody(trip, { editable: false }),
       el('footer', { class: 'shared', text: formatStamp(trip.updatedAt) }),
@@ -497,7 +513,17 @@
     try {
       if (shared) {
         setStatus('Loading…');
-        const data = await api('GET', `/api/shared/${shared[1]}`);
+        const [data, me] = await Promise.all([
+          api('GET', `/api/shared/${shared[1]}`),
+          api('GET', '/api/me').catch(() => ({ signedIn: false })),
+        ]);
+        state.me = me;
+        renderAccount();
+        // Coming back from "Sign in to edit": go straight to the editor.
+        if (data.tripId && new URLSearchParams(location.search).has('edit')) {
+          location.replace(`/trips/${data.tripId}`);
+          return;
+        }
         setStatus('');
         renderShared(data);
         return;

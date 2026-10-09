@@ -204,6 +204,8 @@ export class TravelPlanStack extends Stack {
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ['/*'],
+      // Browsers revalidate (cheap 304s) so a deploy takes effect on the next load.
+      cacheControl: [s3deploy.CacheControl.noCache()],
     });
 
     new route53.ARecord(this, 'SiteAliasRecord', {
