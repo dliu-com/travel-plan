@@ -545,11 +545,9 @@
             el('a', { href: mapsUrl(event.place), target: '_blank', rel: 'noopener noreferrer', text: `📍 ${event.place}` }),
           ]),
         ]),
-        event.notes && el('p', { class: 'notes', text: event.notes }),
-        link && el('a', { class: 'ext', href: link, target: '_blank', rel: 'noopener noreferrer', text: `${linkLabel(link)} ↗` }),
         editable && el('div', { class: 'actions' }, [
-          el('button', { class: 'link', type: 'button', text: t('编辑', 'Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
-          el('button', { class: 'link danger', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
+          el('button', { class: 'event-action', type: 'button', text: t('✎ 编辑', '✎ Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
+          el('button', { class: 'event-action danger', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
           statusSelect(event.status, {
             class: 'quick-status',
             'aria-label': t('状态', 'Status'),
@@ -568,6 +566,8 @@
             },
           }),
         ]),
+        event.notes && el('p', { class: 'notes', text: event.notes }),
+        link && el('a', { class: 'ext', href: link, target: '_blank', rel: 'noopener noreferrer', text: `${linkLabel(link)} ↗` }),
       ]),
     ]);
     if (hasMore) li.classList.add('has-more');
