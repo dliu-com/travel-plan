@@ -758,7 +758,6 @@
       ...dates.map((date) => el('div', {}, visible.filter((e) => e.date === date && !e.time).map(card))),
     ]);
     const hours = el('div', { class: 'calendar-hours' }, Array.from({ length: 24 }, (_, h) => el('div', { text: `${String(h).padStart(2, '0')}:00` })));
-    let earliest = 24 * 60;
     const columns = dates.map((date) => {
       const items = window.PlanCalendar.layout(visible.filter((e) => e.date === date && e.time));
       const column = el('div', { class: `calendar-column${date === today ? ' today' : ''}`, title: t('点击空白处添加安排', 'Click an empty slot to add an event') });
@@ -769,7 +768,6 @@
         openNewEvent(date, `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
       });
       for (const item of items) {
-        earliest = Math.min(earliest, item.start);
         const node = card(item.event);
         Object.assign(node.style, {
           top: `${item.start * HOUR / 60}px`,
@@ -785,9 +783,8 @@
     for (const row of [header, untimed, grid.lastChild]) row.style.gridTemplateColumns = `64px repeat(${dates.length}, minmax(180px, 1fr))`;
     const scroll = el('div', { class: 'calendar-scroll', tabindex: '0', 'aria-label': t('日历，可滚动查看', 'Scrollable calendar') }, grid);
     scroll.addEventListener('scroll', () => { view.calendarScroll = scroll.scrollTop; });
-    // Open at the first event of the week (or 07:00), then keep the position while editing.
-    const firstHour = earliest < 24 * 60 ? Math.min(7, Math.floor(earliest / 60)) : 7;
-    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? firstHour * HOUR; });
+    // Open at 08:00 (scroll up for earlier), then keep the position while editing.
+    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? 8 * HOUR; });
     const change = (date) => { view.calendarStart = date; view.calendarScroll = null; rerender(); };
     const nav = el('div', { class: 'calendar-nav' }, [
       el('button', { type: 'button', text: t('← 前 7 天', '← Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
