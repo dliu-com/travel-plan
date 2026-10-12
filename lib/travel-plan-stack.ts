@@ -175,6 +175,10 @@ export class TravelPlanStack extends Stack {
       { eventType: cloudfront.FunctionEventType.VIEWER_REQUEST, function: rewrite },
     ];
     const trafficLogging = props.trafficLogging ?? true;
+    // Makes CloudFront add CloudFront-Viewer-City so the visitor function can log the city.
+    const trafficGeoPolicy = trafficLogging
+      ? cloudfront.OriginRequestPolicy.fromOriginRequestPolicyId(this, 'TrafficGeo', Fn.importValue('TrafficGeoOriginRequestPolicyId'))
+      : undefined;
     if (trafficLogging) {
       functionAssociations.push({
         eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
@@ -201,6 +205,7 @@ export class TravelPlanStack extends Stack {
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        originRequestPolicy: trafficGeoPolicy,
         responseHeadersPolicy: headers,
         compress: true,
         functionAssociations,
