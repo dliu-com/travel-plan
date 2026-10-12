@@ -712,7 +712,7 @@
   }
 
   // Calendar uses the stored local clock times, without browser timezone conversion.
-  const HOUR = 64; // pixels per hour on the timeline
+  const HOUR = 96; // pixels per hour on the timeline
   function calendarBody(trip) {
     const dated = trip.events.map((e) => e.date).filter(Boolean).sort();
     const first = [trip.startDate, ...dated].filter(Boolean).sort()[0] || todayIso();
@@ -734,28 +734,30 @@
       class: 'calendar-event',
       'data-status': event.status || 'none',
       'aria-pressed': String(view.selectedEvent === event.id),
-      title: [timeText(event), event.title, event.place, event.status && statusLabel(event.status)].filter(Boolean).join(' · '),
+      title: [timeText(event), event.title, event.place].filter(Boolean).join(' · '),
       onclick: (e) => { e.stopPropagation(); select(event); },
     }, [
       el('strong', { text: [timeText(event), event.title].filter(Boolean).join(' ') }),
       event.place && el('span', { text: event.place }),
+      event.status && el('span', { text: statusLabel(event.status) }),
     ]);
-    const columns = `52px repeat(${dates.length}, minmax(var(--calendar-day), 1fr))`;
-    const header = el('div', { class: 'calendar-header', style: `grid-template-columns:${columns}` }, [
-      el('div', { class: 'calendar-corner' }),
+    const header = el('div', { class: 'calendar-header' }, [
+      el('div', { class: 'calendar-corner', text: t('当地时间', 'Local time') }),
       ...dates.map((date) => el('div', { class: `calendar-date${date === today ? ' today' : ''}` }, [
-        el('strong', {}, [el('span', { text: fmt(date, { weekday: 'short' }) }), ' ', el('span', { text: fmt(date, { day: 'numeric', month: 'short' }) })]),
-        el('button', { type: 'button', class: 'add-event', text: '+', title: t('添加安排', 'Add event'), 'aria-label': t(`在 ${date} 添加安排`, `Add event on ${date}`), onclick: () => openNewEvent(date) }),
+        el('div', {}, [
+          el('small', { text: fmt(date, { weekday: 'short' }) }),
+          el('strong', { text: fmt(date, { day: 'numeric', month: 'short' }) }),
+        ]),
+        el('button', { type: 'button', class: 'calendar-add', text: '+', title: t('添加安排', 'Add event'), 'aria-label': t(`在 ${date} 添加安排`, `Add event on ${date}`), onclick: () => openNewEvent(date) }),
       ])),
     ]);
-    const untimedEvents = dates.map((date) => visible.filter((e) => e.date === date && !e.time));
-    const untimed = untimedEvents.some((list) => list.length) && el('div', { class: 'calendar-untimed', style: `grid-template-columns:${columns}` }, [
-      el('div', { class: 'calendar-corner', text: t('待定', 'Any time') }),
-      ...untimedEvents.map((list) => el('div', {}, list.map(card))),
+    const untimed = el('div', { class: 'calendar-untimed' }, [
+      el('div', { class: 'calendar-corner', text: t('全天／时间待定', 'All day / time TBD') }),
+      ...dates.map((date) => el('div', {}, visible.filter((e) => e.date === date && !e.time).map(card))),
     ]);
     const hours = el('div', { class: 'calendar-hours' }, Array.from({ length: 24 }, (_, h) => el('div', { text: `${String(h).padStart(2, '0')}:00` })));
     let earliest = 24 * 60;
-    const dayColumns = dates.map((date) => {
+    const columns = dates.map((date) => {
       const items = window.PlanCalendar.layout(visible.filter((e) => e.date === date && e.time));
       const column = el('div', { class: `calendar-column${date === today ? ' today' : ''}`, title: t('点击空白处添加安排', 'Click an empty slot to add an event') });
       // Like Outlook: click an empty slot to add an event at that half hour.
@@ -767,11 +769,9 @@
       for (const item of items) {
         earliest = Math.min(earliest, item.start);
         const node = card(item.event);
-        const height = (item.end - item.start) * HOUR / 60;
-        if (height < 40) node.classList.add('short');
         Object.assign(node.style, {
           top: `${item.start * HOUR / 60}px`,
-          height: `${height}px`,
+          height: `${(item.end - item.start) * HOUR / 60}px`,
           left: `${item.lane / item.lanes * 100}%`,
           width: `${100 / item.lanes}%`,
         });
@@ -779,21 +779,18 @@
       }
       return column;
     });
-    const grid = el('div', { class: 'calendar-grid' }, [
-      el('div', { class: 'calendar-top' }, [header, untimed]),
-      el('div', { class: 'calendar-timeline', style: `grid-template-columns:${columns};height:${24 * HOUR}px` }, [hours, ...dayColumns]),
-    ]);
+    const grid = el('div', { class: 'calendar-grid' }, [el('div', { class: 'calendar-top' }, [header, untimed]), el('div', { class: 'calendar-timeline' }, [hours, ...columns])]);
+    for (const row of [header, untimed, grid.lastChild]) row.style.gridTemplateColumns = `64px repeat(${dates.length}, minmax(180px, 1fr))`;
     const scroll = el('div', { class: 'calendar-scroll', tabindex: '0', 'aria-label': t('日历，可滚动查看', 'Scrollable calendar') }, grid);
     scroll.addEventListener('scroll', () => { view.calendarScroll = scroll.scrollTop; });
-    // Open at the first event of the week (or 08:00), then keep the position while editing.
-    const firstHour = earliest < 24 * 60 ? Math.max(0, Math.floor(earliest / 60) - 1) : 8;
-    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? Math.max(0, firstHour * HOUR - 10); });
+    // Open at the first event of the week (or 07:00), then keep the position while editing.
+    const firstHour = earliest < 24 * 60 ? Math.min(7, Math.floor(earliest / 60)) : 7;
+    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? firstHour * HOUR; });
     const change = (date) => { view.calendarStart = date; view.calendarScroll = null; rerender(); };
-    const paged = start > first || dates.at(-1) < last;
     const nav = el('div', { class: 'calendar-nav' }, [
-      paged && el('button', { type: 'button', text: '←', title: t('前 7 天', 'Previous 7 days'), 'aria-label': t('前 7 天', 'Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
-      el('strong', { text: dateRange({ startDate: dates[0], endDate: dates.at(-1) }) }),
-      paged && el('button', { type: 'button', text: '→', title: t('后 7 天', 'Next 7 days'), 'aria-label': t('后 7 天', 'Next 7 days'), disabled: dates.at(-1) >= last, onclick: () => change(addDays(start, 7)) }),
+      el('button', { type: 'button', text: t('← 前 7 天', '← Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
+      el('strong', { text: `${fmt(start, { year: 'numeric', month: 'short', day: 'numeric' })} – ${fmt(dates.at(-1), { month: 'short', day: 'numeric' })}` }),
+      el('button', { type: 'button', text: t('后 7 天 →', 'Next 7 days →'), disabled: dates.at(-1) >= last, onclick: () => change(addDays(start, 7)) }),
     ]);
     const adding = typeof state.editing === 'string' && state.editing.startsWith('new:');
     const detailEvent = trip.events.find((e) => e.id === (state.editing || view.selectedEvent));
@@ -801,13 +798,8 @@
       adding ? newEventForm(state.editing.slice(4), view.newTime) : detailEvent && el('ol', { class: 'events' }, [eventItem(trip, detailEvent, true)]),
     ]);
     const undated = visible.filter((e) => !e.date);
-    return [
-      trip.events.some((e) => e.status) && viewBar(trip),
-      nav,
-      scroll,
-      detail,
-      undated.length > 0 && el('section', { class: 'calendar-anytime' }, [el('h2', { text: t('日期待定', 'Date to be decided') }), el('div', {}, undated.map(card))]),
-    ];
+    return [viewBar(trip), nav, scroll, detail,
+      undated.length > 0 && el('section', { class: 'calendar-anytime' }, [el('h2', { text: t('日期待定', 'Date to be decided') }), ...undated.map(card)])];
   }
 
   async function deleteEvent(event) {
