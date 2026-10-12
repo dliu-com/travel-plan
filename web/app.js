@@ -911,9 +911,9 @@
     const guest = isGuest();
     document.title = `${trip.title} · ${brand()}`;
     show(el('article', { class: 'post' }, [
+      !guest && el('a', { class: 'back-link', href: '/', text: t('← 所有行程', '← All plans') }),
       tripHead(trip),
       el('div', { class: 'toolbar' }, [
-        !guest && el('a', { class: 'button', href: '/', text: t('← 全部行程', '← All travel plans') }),
         el('button', { class: 'primary', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
         el('button', { type: 'button', text: t('导出 PDF', 'Export PDF'), title: t('在打印窗口中选择“另存为 PDF”', 'Choose “Save as PDF” in the print dialog'), onclick: () => window.print() }),
       ]),
