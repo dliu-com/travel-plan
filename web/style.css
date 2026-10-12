@@ -154,7 +154,10 @@ button.small { padding: .3rem .7rem; font-size: 14px; }
 .day-head h2 { font: 600 1.35rem var(--serif); margin: 0; }
 .day-head .date { color: var(--muted); font-size: 14px; }
 .day-head .dots { display: inline-flex; gap: 3px; align-self: center; }
-.day-head button { margin-left: auto; }
+.day-head .add-event { margin-left: auto; align-self: center; flex: none; }
+button.add-event { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; font-size: 14px; padding: .3rem .8rem; border-radius: 999px; white-space: nowrap; }
+button.add-event:hover { background: var(--accent); color: #fff; }
+.empty p { margin: 0 0 .75rem; }
 .day-peek { display: none; margin: .1rem 0 0 1.55rem; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .day:not([open]) .day-peek { display: block; }
 .nothing { color: var(--muted); font-style: italic; margin: .25rem 0; font-size: 14px; }
@@ -322,7 +325,7 @@ footer.shared { margin-top: 3rem; text-align: center; color: var(--muted); font-
 }
 
 @media print {
-  header.site, .site-nav, .back-link, .toolbar, .share-fact, .actions, .viewbar, .day-head button, #status, .guest-note, .attach, .file-action, .add-description, .trip-files .hint, .danger-zone, .editable.empty { display: none !important; }
+  header.site, .site-nav, .back-link, .toolbar, .add-event, .share-fact, .actions, .viewbar, .day-head button, #status, .guest-note, .attach, .file-action, .add-description, .trip-files .hint, .danger-zone, .editable.empty { display: none !important; }
   body { background: #fff; }
   .person { background: none; border: 1px solid #bbb; }
 }

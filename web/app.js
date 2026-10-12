@@ -668,9 +668,10 @@
             el('span', { class: 'date', text: sub }),
             el('span', { class: 'dots', 'aria-hidden': 'true' }, allEvents.map((e) => el('span', { class: 'dot', 'data-status': e.status || 'none' }))),
             editable && el('button', {
-              class: 'link',
+              class: 'add-event',
               type: 'button',
-              text: t('+ 添加', '+ Add'),
+              text: t('+ 添加安排', '+ Add event'),
+              title: t(`在 ${title} 添加安排`, `Add an event to ${title}`),
               onclick: (e) => { e.preventDefault(); e.stopPropagation(); openNewEvent(date); },
             }),
           ]),
@@ -685,7 +686,14 @@
         adding && newEventForm(date),
       ]));
     }
-    if (!nodes.length) nodes.push(el('p', { class: 'empty', text: editable ? t('还没有安排——添加第一个吧。', 'No events yet — add the first one.') : t('暂无安排。', 'Nothing planned yet.') }));
+    if (!nodes.length) {
+      nodes.push(editable
+        ? el('div', { class: 'empty' }, [
+          el('p', { text: t('还没有安排——添加第一个吧。', 'No events yet — add the first one.') }),
+          el('button', { type: 'button', class: 'add-event', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
+        ])
+        : el('p', { class: 'empty', text: t('暂无安排。', 'Nothing planned yet.') }));
+    }
     const list = el('div', { class: `days${view.compact ? ' compact' : ''}` }, nodes);
     return trip.events.some((e) => e.status) ? [viewBar(trip), list] : [list];
   }
@@ -914,7 +922,6 @@
       !guest && el('a', { class: 'back-link', href: '/', text: t('← 所有行程', '← All plans') }),
       tripHead(trip),
       el('div', { class: 'toolbar' }, [
-        el('button', { class: 'primary', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
         el('button', { type: 'button', text: t('导出 PDF', 'Export PDF'), title: t('在打印窗口中选择“另存为 PDF”', 'Choose “Save as PDF” in the print dialog'), onclick: () => window.print() }),
       ]),
       guest && el('p', { class: 'guest-note' }, [
