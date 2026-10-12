@@ -79,10 +79,17 @@ test('access logs include cookies for the traffic monitor, without legacy log fi
   expect(distribution.Properties.DistributionConfig.Logging).toEqual({ IncludeCookies: true });
 });
 
+test('pages forward the viewer city so the visitor function can log it', () => {
+  const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
+  expect(distribution.Properties.DistributionConfig.DefaultCacheBehavior.OriginRequestPolicyId)
+    .toEqual({ 'Fn::ImportValue': 'TrafficGeoOriginRequestPolicyId' });
+});
+
 test('traffic logging can be turned off', () => {
   const quiet = Template.fromStack(new TravelPlanStack(new App(), 'Quiet', { env, trafficLogging: false }));
   const distribution = Object.values(quiet.findResources('AWS::CloudFront::Distribution'))[0] as any;
   expect(distribution.Properties.DistributionConfig.Logging).toBeUndefined();
+  expect(distribution.Properties.DistributionConfig.DefaultCacheBehavior.OriginRequestPolicyId).toBeUndefined();
 });
 
 test('pages are not indexed and only load our own scripts', () => {
