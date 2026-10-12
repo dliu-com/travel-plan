@@ -1,10 +1,14 @@
 AWS_REGION ?= eu-west-1
 STACK_NAME ?= TravelPlan
 
-.PHONY: install test synth diff deploy set-secrets outputs dev
+.PHONY: install pdf-deps test synth diff deploy set-secrets outputs dev
 
-install:
+install: pdf-deps
 	npm ci
+
+# Runtime dependencies of the PDF function (pdfkit), bundled into its Lambda asset.
+pdf-deps:
+	npm ci --prefix lambda/pdf --omit=dev --no-audit --no-fund
 
 test:
 	npm test -- --runInBand
@@ -15,7 +19,7 @@ synth:
 diff:
 	AWS_REGION=$(AWS_REGION) npm run diff
 
-deploy: test
+deploy: pdf-deps test
 	AWS_REGION=$(AWS_REGION) npm run deploy
 
 set-secrets:

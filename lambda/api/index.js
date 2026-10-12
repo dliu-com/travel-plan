@@ -1,7 +1,7 @@
 'use strict';
 
-const crypto = require('crypto');
 const auth = require('./auth');
+const { HttpError, createAccess, header } = require('./access');
 const { loadConfig, NotConfigured } = require('./config');
 const { createFiles } = require('./s3');
 const { createStore, NotFound, TooLarge } = require('./store');
@@ -10,21 +10,11 @@ const {
   parseEvent, parseFileUpdate, parseTrip, parseUpload, toApiTrip, toSummary,
 } = require('./trips');
 
-// Recorded as the editor when someone changes a trip through its share link.
-const GUEST = 'share-link';
-
 const SECURITY_HEADERS = {
   'cache-control': 'no-store',
   'x-content-type-options': 'nosniff',
 };
 const MAX_BODY_BYTES = 64 * 1024;
-
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
 
 function json(statusCode, body, cookies) {
   return {
@@ -39,12 +29,6 @@ function redirect(location, cookies) {
   return { statusCode: 302, headers: { ...SECURITY_HEADERS, location }, ...(cookies ? { cookies } : {}), body: '' };
 }
 
-function sameToken(a, b) {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function errorPage(statusCode, message, cookies) {
@@ -56,11 +40,6 @@ function errorPage(statusCode, message, cookies) {
 <body style="font-family:system-ui;max-width:32rem;margin:4rem auto">
 <h1>Sign-in problem</h1><p>${escapeHtml(message)}</p><p><a href="/auth/login">Try again</a></p></body>`,
   };
-}
-
-function header(event, name) {
-  const headers = event.headers || {};
-  return headers[name] || headers[name.toLowerCase()];
 }
 
 function readBody(event) {
@@ -81,30 +60,11 @@ function createHandler(deps = {}) {
   const fetchImpl = deps.fetchImpl || ((...args) => fetch(...args));
   const clock = deps.now || Date.now;
 
-  async function optionalSession(event) {
-    try {
-      return auth.getSession(event, await getConfig(), clock());
-    } catch (error) {
-      if (error instanceof NotConfigured) return null;
-      throw error;
-    }
-  }
+  const { access } = createAccess({ getConfig, store, clock });
 
   // Cookies are SameSite=Lax; also insist that writes come from our own pages.
   function requireSameOrigin(event) {
     if (header(event, 'origin') !== process.env.SITE_URL) throw new HttpError(403, 'Cross-site request refused');
-  }
-
-  // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip,
-  // but can't see other trips, delete it or change its link. The token comes in a header (or ?token= for images).
-  async function access(event, tripId) {
-    const session = await optionalSession(event);
-    if (session) return { user: session.name || session.user, member: true };
-    const token = header(event, 'x-plan-token') || (event.queryStringParameters || {}).token;
-    if (!token || tripId === undefined) throw new HttpError(401, 'Sign in to do that');
-    const item = SHARE_TOKEN.test(token) ? await store.getTrip(tripId) : null;
-    if (!item || !item.shareToken || !sameToken(token, item.shareToken)) throw new HttpError(403, 'This link no longer works');
-    return { user: GUEST, member: false };
   }
 
   async function getTrip(id) {

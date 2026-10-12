@@ -13,6 +13,7 @@ process.env.SITE_URL = SITE_URL;
 
 const auth = require('../lambda/api/auth');
 const { createHandler } = require('../lambda/api/index');
+const pdf = require('../lambda/pdf/index');
 const { createMemoryFiles } = require('./memory-files');
 const { createMemoryStore } = require('./memory-store');
 
@@ -20,6 +21,7 @@ const config = { tenantId: 'dev', clientId: 'dev', clientSecret: 'dev-secret', a
 const store = createMemoryStore();
 const files = createMemoryFiles();
 const handler = createHandler({ store, files, loadConfig: async () => config });
+const pdfHandler = pdf.createHandler({ store, loadConfig: async () => config });
 const WEB = path.join(__dirname, '..', 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 // Local cookies can't use the __Host- prefix over plain http, so rename them on the way in and out.
@@ -98,9 +100,11 @@ async function handle(req, res) {
   if (url.pathname.startsWith('/api/')) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    const result = await handler(toLambdaEvent(req, Buffer.concat(chunks)));
+    // Same split as CloudFront: PDF export is its own function.
+    const target = /^\/api\/trips\/[^/]+\/pdf$/.test(url.pathname) ? pdfHandler : handler;
+    const result = await target(toLambdaEvent(req, Buffer.concat(chunks)));
     res.writeHead(result.statusCode, result.headers);
-    return res.end(result.body);
+    return res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
   }
   let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/(about|security)\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
   file = path.join(WEB, path.normalize(file));

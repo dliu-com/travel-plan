@@ -112,17 +112,46 @@ export class TravelPlanStack extends Stack {
     table.grantReadWriteData(apiHandler);
     filesBucket.grantReadWrite(apiHandler);
     filesBucket.grantDelete(apiHandler);
-    apiHandler.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['ssm:GetParameters'],
-      resources: [this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: PARAMETER_PREFIX.slice(1) + '/*' })],
-    }));
-    apiHandler.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['kms:Decrypt'],
-      resources: ['*'],
-      conditions: { StringEquals: { 'kms:ViaService': `ssm.${this.region}.amazonaws.com` } },
-    }));
+    // Both functions read the sign-in secrets (the session key) from SSM.
+    const readSecrets = (fn: lambda.Function) => {
+      fn.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['ssm:GetParameters'],
+        resources: [this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: PARAMETER_PREFIX.slice(1) + '/*' })],
+      }));
+      fn.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['kms:Decrypt'],
+        resources: ['*'],
+        conditions: { StringEquals: { 'kms:ViaService': `ssm.${this.region}.amazonaws.com` } },
+      }));
+    };
+    readSecrets(apiHandler);
 
     const functionUrl = apiHandler.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
+
+    // PDF export: lays out a plan with pdfkit and an embedded CJK font. Reuses the API's access checks,
+    // so the asset is lambda/ (api/ + pdf/). Read-only on the table; no access to the attachments bucket.
+    const pdfHandler = new lambda.Function(this, 'PdfHandler', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'pdf/index.handler',
+      code: lambda.Code.fromAsset(path.join(ROOT, 'lambda'), { exclude: ['pdf/package-lock.json', '**/*.md'] }),
+      timeout: Duration.seconds(30),
+      memorySize: 1024,
+      reservedConcurrentExecutions: 5,
+      description: 'plan.dliu.com travel plan PDF export',
+      environment: {
+        SITE_URL: siteUrl,
+        ROOT_DOMAIN: rootDomain,
+        TABLE_NAME: table.tableName,
+        PARAMETER_PREFIX,
+      },
+      logGroup: new logs.LogGroup(this, 'PdfLogs', {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+    table.grantReadData(pdfHandler);
+    readSecrets(pdfHandler);
+    const pdfUrl = pdfHandler.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
 
     // ---------- Website ----------
     const siteBucket = new s3.Bucket(this, 'SiteBucket', {
@@ -198,6 +227,12 @@ export class TravelPlanStack extends Stack {
       responseHeadersPolicy: headers,
     };
 
+    const pdfBehavior: cloudfront.BehaviorOptions = {
+      ...apiBehavior,
+      origin: origins.FunctionUrlOrigin.withOriginAccessControl(pdfUrl, { readTimeout: Duration.seconds(30) }),
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+    };
+
     const distribution = new cloudfront.Distribution(this, 'SiteDistribution', {
       comment: 'plan.dliu.com',
       defaultBehavior: {
@@ -210,7 +245,9 @@ export class TravelPlanStack extends Stack {
         compress: true,
         functionAssociations,
       },
+      // Listed first so it wins over api/*.
       additionalBehaviors: {
+        'api/trips/*/pdf': pdfBehavior,
         'api/*': apiBehavior,
         'auth/*': apiBehavior,
       },
@@ -228,12 +265,14 @@ export class TravelPlanStack extends Stack {
     }
 
     // New function URLs require both invoke permissions. CDK adds InvokeFunctionUrl.
-    apiHandler.addPermission('CloudFrontInvokeFunction', {
-      principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
-      action: 'lambda:InvokeFunction',
-      sourceArn: distribution.distributionArn,
-      invokedViaFunctionUrl: true,
-    });
+    for (const fn of [apiHandler, pdfHandler]) {
+      fn.addPermission('CloudFrontInvokeFunction', {
+        principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
+        action: 'lambda:InvokeFunction',
+        sourceArn: distribution.distributionArn,
+        invokedViaFunctionUrl: true,
+      });
+    }
 
     new s3deploy.BucketDeployment(this, 'SiteContent', {
       sources: [s3deploy.Source.asset(path.join(ROOT, 'web'))],
@@ -260,5 +299,6 @@ export class TravelPlanStack extends Stack {
     new CfnOutput(this, 'TableName', { value: table.tableName });
     new CfnOutput(this, 'FilesBucketName', { value: filesBucket.bucketName });
     new CfnOutput(this, 'ApiFunctionName', { value: apiHandler.functionName });
+    new CfnOutput(this, 'PdfFunctionName', { value: pdfHandler.functionName });
   }
 }

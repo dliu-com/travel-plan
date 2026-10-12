@@ -40,8 +40,8 @@ test('api can query the share index and read only its own parameters', () => {
 test('api and auth paths go to the function URL with all methods and no caching', () => {
   const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
   const behaviors = distribution.Properties.DistributionConfig.CacheBehaviors;
-  expect(behaviors.map((b: any) => b.PathPattern).sort()).toEqual(['api/*', 'auth/*']);
-  for (const behavior of behaviors) {
+  expect(behaviors.map((b: any) => b.PathPattern)).toEqual(['api/trips/*/pdf', 'api/*', 'auth/*']);
+  for (const behavior of behaviors.slice(1)) {
     expect(behavior.AllowedMethods).toEqual(expect.arrayContaining(['POST', 'PUT', 'DELETE']));
     expect(behavior.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   }
@@ -51,6 +51,26 @@ test('api and auth paths go to the function URL with all methods and no caching'
     Principal: 'cloudfront.amazonaws.com',
     InvokedViaFunctionUrl: true,
   });
+});
+
+test('PDF export is its own read-only function behind CloudFront, ahead of api/*', () => {
+  const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
+  const [pdf, api] = distribution.Properties.DistributionConfig.CacheBehaviors;
+  expect(pdf.PathPattern).toBe('api/trips/*/pdf');
+  expect(pdf.AllowedMethods.sort()).toEqual(['GET', 'HEAD']);
+  expect(pdf.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+  expect(pdf.TargetOriginId).not.toBe(api.TargetOriginId);
+  template.hasResourceProperties('AWS::Lambda::Function', {
+    Handler: 'pdf/index.handler',
+    MemorySize: 1024,
+    Timeout: 30,
+    ReservedConcurrentExecutions: 5,
+    Environment: { Variables: Match.objectLike({ TABLE_NAME: Match.anyValue() }) },
+  });
+  template.resourceCountIs('AWS::Lambda::Url', 2);
+  const pdfFunction = Object.entries(template.findResources('AWS::Lambda::Function'))
+    .find(([, r]: any) => r.Properties.Handler === 'pdf/index.handler') as any;
+  expect(pdfFunction[1].Properties.Environment.Variables.FILES_BUCKET).toBeUndefined();
 });
 
 test('trip and share pages are rewritten to the app shell', () => {

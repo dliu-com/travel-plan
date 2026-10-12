@@ -41,6 +41,8 @@
     'End date is before the start date': '结束日期早于开始日期。',
     'Link must be a full URL starting with https://': '链接须为以 https:// 开头的完整网址。',
     'Link must start with http:// or https://': '链接须以 http:// 或 https:// 开头。',
+    'This travel plan is too long to export as a PDF': '行程内容太多，无法导出 PDF。',
+    'Internal error': '服务器出错，请稍后再试。',
   };
 
   // ---------- helpers ----------
@@ -761,8 +763,52 @@
     else prompt(t('复制这个链接：', 'Copy this link:'), url);
   }
 
-  // Sharing lives in the Sharing row of the plan header.
+  // The PDF is laid out by a server function (lambda/pdf); the button spins until the file arrives.
+  async function downloadPdf(trip, button) {
+    if (button.disabled) return;
+    const label = button.textContent;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), t('正在生成 PDF…', 'Generating PDF…'));
+    try {
+      const params = new URLSearchParams({ lang: language });
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (timeZone) params.set('tz', timeZone);
+      const response = await fetch(`/api/trips/${trip.id}/pdf?${params}`, {
+        credentials: 'same-origin',
+        headers: state.token ? { 'x-plan-token': state.token } : {},
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const message = data.error || t(`导出失败（${response.status}）`, `Export failed (${response.status})`);
+        throw new Error((language === 'zh' && SERVER_MESSAGES_ZH[message]) || message);
+      }
+      const blob = await response.blob();
+      const named = /filename\*=UTF-8''([^;]+)/i.exec(response.headers.get('content-disposition') || '');
+      const link = el('a', { href: URL.createObjectURL(blob), download: named ? decodeURIComponent(named[1]) : `plan-${trip.id}.pdf` });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.textContent = label;
+    }
+  }
+
+  const pdfButton = (trip) => el('button', {
+    type: 'button',
+    class: 'small pdf',
+    text: t('下载 PDF', 'Download PDF'),
+    onclick: (e) => downloadPdf(trip, e.currentTarget),
+  });
+
+  // Sharing lives in the Sharing row of the plan header. Guests (share link) only get the PDF.
   function sharePanel(trip) {
+    if (isGuest()) return el('div', { class: 'share row' }, [pdfButton(trip)]);
     const shareButton = (onclick) => el('button', { type: 'button', class: 'primary small', text: t('分享', 'Share'), title: LINK_HINT(), onclick });
     if (!trip.shareToken) {
       const create = async () => {
@@ -785,6 +831,7 @@
           title: LINK_HINT(),
           onclick: shareAction(() => setShare('POST'), t('链接已创建。', 'Link created.')),
         }),
+        pdfButton(trip),
       ]);
     }
     const copyLabel = t('复制链接', 'Copy link');
@@ -810,6 +857,7 @@
         onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
           && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
       }),
+      pdfButton(trip),
     ]);
   }
 
@@ -897,7 +945,7 @@
         fact(t('同行', 'Who’s going'), editable('who', people.length > 0 && el('span', { class: 'people' }, people.map((name) => el('span', { class: 'person', text: name }))), t('+ 添加同行的人', '+ Add who’s going'), () => inlineEditor('who', [
           input('travellers', { maxlength: 2000, value: people.join(', '), placeholder: TRAVELLERS_HINT(), 'aria-label': t('同行的人', 'Who’s going') }),
         ]))),
-        !isGuest() && fact(t('分享', 'Sharing'), sharePanel(trip), 'share-fact'),
+        fact(t('分享', 'Sharing'), sharePanel(trip), 'share-fact'),
       ]),
       editable('intro', trip.intro && el('div', { class: 'intro', text: trip.intro }), t('+ 添加行程描述', '+ Add a description'), introEditor),
       el('p', { class: 'meta', text: formatStamp(trip.updatedAt, trip.updatedBy) }),
@@ -921,9 +969,6 @@
     show(el('article', { class: 'post' }, [
       !guest && el('a', { class: 'back-link', href: '/', text: t('← 所有行程', '← All plans') }),
       tripHead(trip),
-      el('div', { class: 'toolbar' }, [
-        el('button', { type: 'button', text: t('导出 PDF', 'Export PDF'), title: t('在打印窗口中选择“另存为 PDF”', 'Choose “Save as PDF” in the print dialog'), onclick: () => window.print() }),
-      ]),
       guest && el('p', { class: 'guest-note' }, [
         t('你正通过分享链接查看和编辑此行程。', 'You’re viewing and editing this travel plan through a share link. '),
         el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('成员登录', 'Members sign in') }),
@@ -1035,8 +1080,7 @@
     }
   }
 
-  // Print the whole plan: every day unfolded, every note in full.
-  // The document title becomes the PDF's default filename.
+  // If someone prints the page anyway: every day unfolded, every note in full.
   window.addEventListener('beforeprint', () => {
     if (state.trip) document.title = [state.trip.title, dateRange(state.trip)].filter(Boolean).join(' ');
     main.querySelectorAll('details.day').forEach((d) => { d.open = true; });
