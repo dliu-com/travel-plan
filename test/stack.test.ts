@@ -88,6 +88,20 @@ test('trip and share pages are rewritten to the app shell', () => {
   expect(uri('/security/')).toBe('/index.html');
   expect(uri('/about.txt')).toBe('/about.txt');
   expect(uri('/app.js')).toBe('/app.js');
+  expect(uri('/')).toBe('/');
+});
+
+test('link-preview bots get the title without any image', () => {
+  // eslint-disable-next-line no-new-func
+  const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
+  const visit = (uri: string, agent: string) => handler({ request: { uri, headers: { 'user-agent': { value: agent } } } });
+  const card = visit('/plan/20261000', 'WhatsApp/2.23.20.0 A');
+  expect(card.statusCode).toBe(200);
+  expect(card.body).toContain('<title>DL Travel Plan</title>');
+  expect(card.body).not.toMatch(/<img|og:image|rel="icon"/);
+  expect(visit('/plan/20261000', 'facebookexternalhit/1.1 Facebot Twitterbot/1.0').statusCode).toBe(200);
+  expect(visit('/plan/20261000', 'Mozilla/5.0 (Macintosh) Chrome/130').uri).toBe('/index.html');
+  expect(visit('/icon.png', 'WhatsApp/2.23.20.0 A').uri).toBe('/icon.png');
 });
 
 test('the api cannot use up the shared account concurrency', () => {

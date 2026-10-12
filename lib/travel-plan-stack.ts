@@ -25,11 +25,25 @@ const ROOT = path.join(__dirname, '..');
 export const PARAMETER_PREFIX = '/travel-plan';
 
 // Serves the single-page app for trip pages (/plan/<id>) and old links (/trips/<id>, /s/<token>).
+// Link-preview bots (WhatsApp, iMessage, Telegram, Slack, Teams…) get a bare page with the
+// title and no images, so chats show a plain link instead of a big icon card.
+export const PREVIEW_BOTS = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|redditbot|Pinterest|vkShare|Viber/i;
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
   var uri = request.uri;
-  if (uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0) request.uri = '/index.html';
-  else if (uri === '/about' || uri === '/about/' || uri === '/security' || uri === '/security/') request.uri = '/index.html';
+  var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
+    || uri === '/about' || uri === '/about/' || uri === '/security' || uri === '/security/';
+  var agent = request.headers && request.headers['user-agent'] ? request.headers['user-agent'].value : '';
+  if (page && ${PREVIEW_BOTS}.test(agent)) {
+    return {
+      statusCode: 200,
+      statusDescription: 'OK',
+      headers: { 'content-type': { value: 'text/html; charset=utf-8' }, 'cache-control': { value: 'no-store' } },
+      body: '<!doctype html><html><head><meta charset="utf-8"><title>DL Travel Plan</title>'
+        + '<meta property="og:title" content="DL Travel Plan"><meta property="og:site_name" content="DL Travel Plan"></head><body></body></html>',
+    };
+  }
+  if (page && uri !== '/') request.uri = '/index.html';
   return request;
 }`;
 
