@@ -302,11 +302,12 @@ function renderPdf(trip, { lang = 'en', timeZone, now = new Date(), siteUrl = 'h
       if (meta) height += use('regular', 9, COLORS.muted).heightOfString(meta, { width: contentWidth }) + 2;
       if (notes) height += use('regular', 10, COLORS.body).heightOfString(notes, { width: contentWidth, lineGap: 2 }) + 3;
       if (event.link) height += 14;
-      ensureSpace(height + 4);
+      ensureSpace(Math.max(height, event.endTime ? 26 : 0) + 4);
 
       const page = doc.page;
       const top = doc.y;
       use('bold', 10, COLORS.text).text(event.time || '', left, top + 1.5, { width: timeWidth, lineBreak: false });
+      if (event.endTime) use('regular', 9, COLORS.muted).text(`– ${event.endTime}`, left, top + 14, { width: timeWidth, lineBreak: false });
       use('bold', 11.5, COLORS.text).text(name, contentX, top, { width: contentWidth });
       if (meta) {
         doc.y += 1;
@@ -326,6 +327,7 @@ function renderPdf(trip, { lang = 'en', timeZone, now = new Date(), siteUrl = 'h
         const href = /^https?:\/\//i.test(event.link) ? event.link : null;
         use('regular', 9, COLORS.accent).text(clean(linkLabel(event.link)) || clean(event.link), contentX, doc.y, { width: contentWidth, link: href, underline: Boolean(href) });
       }
+      if (event.endTime && doc.page === page) doc.y = Math.max(doc.y, top + 26);
       const end = doc.y;
 
       // The status bar down the left of the event, dashed for ideas that aren't decided yet.
