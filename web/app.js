@@ -809,6 +809,14 @@
   // Sharing lives in the Sharing row of the plan header. Guests (share link) only get the PDF.
   function sharePanel(trip) {
     if (isGuest()) return el('div', { class: 'share row' }, [pdfButton(trip)]);
+    const note = el('p', {
+      class: 'share-note',
+      text: t('打开链接无需登录', 'No sign-in needed to open the link'),
+    });
+    return el('div', { class: 'share-panel' }, [shareButtons(trip), note]);
+  }
+
+  function shareButtons(trip) {
     const shareButton = (onclick) => el('button', { type: 'button', class: 'primary small', text: t('分享', 'Share'), title: LINK_HINT(), onclick });
     if (!trip.shareToken) {
       const create = async () => {
