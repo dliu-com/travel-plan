@@ -811,7 +811,7 @@
     if (isGuest()) return el('div', { class: 'share row' }, [pdfButton(trip)]);
     const note = el('p', {
       class: 'share-note',
-      text: t('打开链接无需登录', 'No sign-in needed to open the link'),
+      text: t('打开分享链接无需登录', 'No sign-in needed to open the share link'),
     });
     return el('div', { class: 'share-panel' }, [shareButtons(trip), note]);
   }
