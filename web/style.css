@@ -185,8 +185,12 @@ button.add-event:hover { background: var(--accent); color: #fff; }
 .event .place a:hover { text-decoration: underline; }
 .event .notes { margin: .35rem 0 0; white-space: pre-wrap; }
 .event .ext { display: inline-block; margin-top: .35rem; font-size: 14px; word-break: break-all; }
-.event .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .9rem; margin-top: .4rem; }
-.quick-status { width: auto; font-size: 13px; padding: .15rem .4rem; }
+.event .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .5rem 0 .15rem; }
+button.event-action { font-size: 13px; font-weight: 600; padding: .2rem .8rem; border-radius: 999px; border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+button.event-action:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.event-action.danger { background: transparent; border-color: color-mix(in srgb, var(--danger) 50%, transparent); color: var(--danger); }
+button.event-action.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+.quick-status { width: auto; font-size: 13px; padding: .2rem .5rem; border-radius: 999px; }
 
 /* Compact view: one line per event, tap to expand */
 .compact .event { padding: .45rem 0; }
