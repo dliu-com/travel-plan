@@ -95,9 +95,14 @@ function parseTrip(input) {
 
 function parseEvent(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequest('Expected a JSON object');
+  const startTime = time(input.time, 'Time');
+  const endTime = time(input.endTime, 'End time');
+  if (endTime && (!startTime || endTime <= startTime)) throw new BadRequest('End time requires a start time and must be later on the same day');
   return {
     date: date(input.date, 'Date'),
-    time: time(input.time, 'Time'),
+    time: startTime,
+    // Always written, so an update without an end time clears an old one.
+    endTime,
     title: text(input.title, 'Title', 200, { required: true }),
     status: status(input.status),
     place: text(input.place, 'Place', 200),
@@ -164,6 +169,7 @@ function toApiTrip(item) {
       id,
       date: event.date || '',
       time: event.time || '',
+      ...(event.endTime ? { endTime: event.endTime } : {}),
       title: event.title || '',
       status: STATUSES.includes(event.status) ? event.status : '',
       place: event.place || '',

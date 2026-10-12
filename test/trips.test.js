@@ -41,11 +41,11 @@ describe('parseTrip', () => {
 describe('parseEvent', () => {
   test('accepts a full event and normalises the link', () => {
     expect(parseEvent({ date: '2026-11-13', time: '06:30', title: 'Inari', status: 'confirmed', place: 'Fushimi', notes: 'early', link: 'https://inari.jp' }))
-      .toEqual({ date: '2026-11-13', time: '06:30', title: 'Inari', status: 'confirmed', place: 'Fushimi', notes: 'early', link: 'https://inari.jp/' });
+      .toEqual({ date: '2026-11-13', time: '06:30', endTime: '', title: 'Inari', status: 'confirmed', place: 'Fushimi', notes: 'early', link: 'https://inari.jp/' });
   });
 
   test('allows undated, untimed events', () => {
-    expect(parseEvent({ title: 'Maybe' })).toEqual({ date: '', time: '', title: 'Maybe', status: '', place: '', notes: '', link: '' });
+    expect(parseEvent({ title: 'Maybe' })).toEqual({ date: '', time: '', endTime: '', title: 'Maybe', status: '', place: '', notes: '', link: '' });
   });
 
   test('only accepts known statuses', () => {

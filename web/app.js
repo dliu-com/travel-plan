@@ -35,6 +35,7 @@
     'Invalid JSON': '请求格式无效。',
     'Not found': '页面不存在。',
     'Method not allowed': '不支持此请求方法。',
+    'End time requires a start time and must be later on the same day': '结束时间须晚于同一天的开始时间。',
     'Title is required': '请填写标题。',
     'At most 30 people can be listed': '最多列出 30 人。',
     'Name must be at most 60 characters': '每个名字最多 60 个字符。',
@@ -221,7 +222,7 @@
     },
   };
   // Events show one line each; click to expand. filter: show one status only.
-  const view = { compact: true, filter: '', openEvents: new Set() };
+  const view = { mode: prefs.get('view', 'agenda') === 'calendar' ? 'calendar' : 'agenda', calendarStart: null, compact: true, filter: '', openEvents: new Set() };
 
   // ---------- forms ----------
   const field = (label, input) => el('label', {}, [label, input]);
@@ -304,6 +305,7 @@
     const inputs = {
       date: el('input', { type: 'date', value: event.date || '' }),
       time: el('input', { type: 'time', value: event.time || '' }),
+      endTime: el('input', { type: 'time', value: event.endTime || '' }),
       title: el('input', { required: true, maxlength: 200, value: event.title || '', placeholder: t('日出时去伏见稻荷', 'Fushimi Inari at sunrise') }),
       place: el('input', { maxlength: 200, value: event.place || '', placeholder: t('京都伏见稻荷大社', 'Fushimi Inari Taisha, Kyoto') }),
       link: el('input', { type: 'url', maxlength: 2000, value: event.link || '', placeholder: 'https://…' }),
@@ -311,8 +313,16 @@
       status: statusSelect(event.status),
     };
     inputs.notes.value = event.notes || '';
+    // An end time only makes sense after a start time.
+    const syncEnd = () => {
+      inputs.endTime.disabled = !inputs.time.value;
+      if (!inputs.time.value) inputs.endTime.value = '';
+      inputs.endTime.min = inputs.time.value;
+    };
+    inputs.time.addEventListener('input', syncEnd);
+    syncEnd();
     return form(options.title, inputs, [
-      el('div', { class: 'fields' }, [field(t('日期', 'Date'), inputs.date), field(t('时间', 'Time'), inputs.time), field(t('状态', 'Status'), inputs.status)]),
+      el('div', { class: 'fields' }, [field(t('日期', 'Date'), inputs.date), field(t('开始时间', 'Start time'), inputs.time), field(t('结束时间', 'End time'), inputs.endTime), field(t('状态', 'Status'), inputs.status)]),
       field(t('事项', 'What'), inputs.title),
       el('div', { class: 'fields' }, [field(t('地点', 'Where'), inputs.place), field(t('链接', 'Link'), inputs.link)]),
       field(t('备注', 'Notes'), inputs.notes),
@@ -526,7 +536,7 @@
     const link = safeLink(event.link);
     const hasMore = Boolean(event.notes || link || editable);
     const li = el('li', { class: 'event', 'data-status': event.status || 'none' }, [
-      el('div', { class: 'time', text: event.time || '' }),
+      el('div', { class: 'time', text: event.time ? `${event.time}${event.endTime ? `–${event.endTime}` : ''}` : '' }),
       el('div', { class: 'body' }, [
         el('div', { class: 'head' }, [
           statusBadge(event, letter),
@@ -596,8 +606,8 @@
     return li;
   }
 
-  function newEventForm(date) {
-    return eventForm({ date }, {
+  function newEventForm(date, time = '') {
+    return eventForm({ date, time }, {
       title: t('添加安排', 'Add event'),
       onCancel: closeForm,
       onSave: async (values) => {
@@ -609,8 +619,9 @@
     });
   }
 
-  function openNewEvent(date) {
+  function openNewEvent(date, time = '') {
     state.editing = `new:${date}`;
+    view.newTime = time;
     rerender();
   }
 
@@ -698,6 +709,105 @@
     }
     const list = el('div', { class: `days${view.compact ? ' compact' : ''}` }, nodes);
     return trip.events.some((e) => e.status) ? [viewBar(trip), list] : [list];
+  }
+
+  // Calendar uses the stored local clock times, without browser timezone conversion.
+  const HOUR = 64; // pixels per hour on the timeline
+  function calendarBody(trip) {
+    const dated = trip.events.map((e) => e.date).filter(Boolean).sort();
+    const first = [trip.startDate, ...dated].filter(Boolean).sort()[0] || todayIso();
+    const last = [trip.endDate, ...dated, first].filter(Boolean).sort().at(-1);
+    const start = view.calendarStart && view.calendarStart >= first && view.calendarStart <= last ? view.calendarStart : first;
+    const dates = Array.from({ length: Math.min(7, dayDiff(start, last) + 1) }, (_, i) => addDays(start, i));
+    const visible = trip.events.filter((e) => !view.filter || e.status === view.filter);
+    const today = todayIso();
+    const select = (event) => {
+      view.selectedEvent = event.id;
+      view.openEvents.add(event.id);
+      state.editing = null;
+      rerender();
+      main.querySelector('.calendar-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    const timeText = (event) => (event.time ? `${event.time}${event.endTime ? `–${event.endTime}` : ''}` : '');
+    const card = (event) => el('button', {
+      type: 'button',
+      class: 'calendar-event',
+      'data-status': event.status || 'none',
+      'aria-pressed': String(view.selectedEvent === event.id),
+      title: [timeText(event), event.title, event.place, event.status && statusLabel(event.status)].filter(Boolean).join(' · '),
+      onclick: (e) => { e.stopPropagation(); select(event); },
+    }, [
+      el('strong', { text: [timeText(event), event.title].filter(Boolean).join(' ') }),
+      event.place && el('span', { text: event.place }),
+    ]);
+    const columns = `52px repeat(${dates.length}, minmax(var(--calendar-day), 1fr))`;
+    const header = el('div', { class: 'calendar-header', style: `grid-template-columns:${columns}` }, [
+      el('div', { class: 'calendar-corner' }),
+      ...dates.map((date) => el('div', { class: `calendar-date${date === today ? ' today' : ''}` }, [
+        el('strong', {}, [el('span', { text: fmt(date, { weekday: 'short' }) }), ' ', el('span', { text: fmt(date, { day: 'numeric', month: 'short' }) })]),
+        el('button', { type: 'button', class: 'add-event', text: '+', title: t('添加安排', 'Add event'), 'aria-label': t(`在 ${date} 添加安排`, `Add event on ${date}`), onclick: () => openNewEvent(date) }),
+      ])),
+    ]);
+    const untimedEvents = dates.map((date) => visible.filter((e) => e.date === date && !e.time));
+    const untimed = untimedEvents.some((list) => list.length) && el('div', { class: 'calendar-untimed', style: `grid-template-columns:${columns}` }, [
+      el('div', { class: 'calendar-corner', text: t('待定', 'Any time') }),
+      ...untimedEvents.map((list) => el('div', {}, list.map(card))),
+    ]);
+    const hours = el('div', { class: 'calendar-hours' }, Array.from({ length: 24 }, (_, h) => el('div', { text: `${String(h).padStart(2, '0')}:00` })));
+    let earliest = 24 * 60;
+    const dayColumns = dates.map((date) => {
+      const items = window.PlanCalendar.layout(visible.filter((e) => e.date === date && e.time));
+      const column = el('div', { class: `calendar-column${date === today ? ' today' : ''}`, title: t('点击空白处添加安排', 'Click an empty slot to add an event') });
+      // Like Outlook: click an empty slot to add an event at that half hour.
+      column.addEventListener('click', (e) => {
+        if (e.target !== column) return;
+        const minutes = Math.max(0, Math.min(23 * 60 + 30, Math.floor(e.offsetY / (HOUR / 2)) * 30));
+        openNewEvent(date, `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
+      });
+      for (const item of items) {
+        earliest = Math.min(earliest, item.start);
+        const node = card(item.event);
+        const height = (item.end - item.start) * HOUR / 60;
+        if (height < 40) node.classList.add('short');
+        Object.assign(node.style, {
+          top: `${item.start * HOUR / 60}px`,
+          height: `${height}px`,
+          left: `${item.lane / item.lanes * 100}%`,
+          width: `${100 / item.lanes}%`,
+        });
+        column.append(node);
+      }
+      return column;
+    });
+    const grid = el('div', { class: 'calendar-grid' }, [
+      el('div', { class: 'calendar-top' }, [header, untimed]),
+      el('div', { class: 'calendar-timeline', style: `grid-template-columns:${columns};height:${24 * HOUR}px` }, [hours, ...dayColumns]),
+    ]);
+    const scroll = el('div', { class: 'calendar-scroll', tabindex: '0', 'aria-label': t('日历，可滚动查看', 'Scrollable calendar') }, grid);
+    scroll.addEventListener('scroll', () => { view.calendarScroll = scroll.scrollTop; });
+    // Open at the first event of the week (or 08:00), then keep the position while editing.
+    const firstHour = earliest < 24 * 60 ? Math.max(0, Math.floor(earliest / 60) - 1) : 8;
+    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? Math.max(0, firstHour * HOUR - 10); });
+    const change = (date) => { view.calendarStart = date; view.calendarScroll = null; rerender(); };
+    const paged = start > first || dates.at(-1) < last;
+    const nav = el('div', { class: 'calendar-nav' }, [
+      paged && el('button', { type: 'button', text: '←', title: t('前 7 天', 'Previous 7 days'), 'aria-label': t('前 7 天', 'Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
+      el('strong', { text: dateRange({ startDate: dates[0], endDate: dates.at(-1) }) }),
+      paged && el('button', { type: 'button', text: '→', title: t('后 7 天', 'Next 7 days'), 'aria-label': t('后 7 天', 'Next 7 days'), disabled: dates.at(-1) >= last, onclick: () => change(addDays(start, 7)) }),
+    ]);
+    const adding = typeof state.editing === 'string' && state.editing.startsWith('new:');
+    const detailEvent = trip.events.find((e) => e.id === (state.editing || view.selectedEvent));
+    const detail = el('section', { class: 'calendar-detail' }, [
+      adding ? newEventForm(state.editing.slice(4), view.newTime) : detailEvent && el('ol', { class: 'events' }, [eventItem(trip, detailEvent, true)]),
+    ]);
+    const undated = visible.filter((e) => !e.date);
+    return [
+      trip.events.some((e) => e.status) && viewBar(trip),
+      nav,
+      scroll,
+      detail,
+      undated.length > 0 && el('section', { class: 'calendar-anytime' }, [el('h2', { text: t('日期待定', 'Date to be decided') }), el('div', {}, undated.map(card))]),
+    ];
   }
 
   async function deleteEvent(event) {
@@ -973,6 +1083,7 @@
 
   function renderTrip() {
     const trip = state.trip;
+    main.classList.toggle('calendar-wide', view.mode === 'calendar');
     const guest = isGuest();
     document.title = `${trip.title} · ${brand()}`;
     show(el('article', { class: 'post' }, [
@@ -983,7 +1094,8 @@
         el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('成员登录', 'Members sign in') }),
       ]),
       tripFiles(trip, true),
-      ...postBody(trip, { editable: true }),
+      el('div', { class: 'view-switch', role: 'group', 'aria-label': t('视图', 'View') }, ['agenda', 'calendar'].map(mode => el('button', { type: 'button', 'aria-pressed': String(view.mode === mode), text: mode === 'agenda' ? t('议程', 'Agenda') : t('日历', 'Calendar'), onclick: () => { view.mode = mode; view.calendarScroll = null; prefs.set('view', mode); rerender(); } }))),
+      ...(view.mode === 'calendar' ? calendarBody(trip) : postBody(trip, { editable: true })),
       !guest && el('div', { class: 'danger-zone' }, [
         el('button', { type: 'button', class: 'danger', text: t('删除行程', 'Delete travel plan'), onclick: () => deleteTrip(trip) }),
       ]),
@@ -992,6 +1104,7 @@
 
   // ---------- index ----------
   async function renderIndex() {
+    main.classList.remove('calendar-wide');
     if (!state.me.signedIn) {
       show(signInCard(state.me.configured === false
         ? t('尚未配置登录。', 'Sign-in is not configured yet.')
