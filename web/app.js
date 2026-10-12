@@ -723,18 +723,22 @@
     const dates = Array.from({ length: Math.min(7, dayDiff(start, last) + 1) }, (_, i) => addDays(start, i));
     const visible = trip.events.filter((e) => !view.filter || e.status === view.filter);
     const today = todayIso();
+    // Update the selection in place so the grid and page don't jump; rebuild only to leave an open form.
     const select = (event) => {
       view.selectedEvent = event.id;
       view.openEvents.add(event.id);
-      state.editing = null;
-      rerender();
-      main.querySelector('.calendar-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (state.editing) { state.editing = null; rerender(); return; }
+      for (const node of main.querySelectorAll('.calendar-event')) node.setAttribute('aria-pressed', String(node.dataset.id === event.id));
+      const detail = main.querySelector('.calendar-detail');
+      detail.replaceChildren(el('ol', { class: 'events' }, [eventItem(trip, event, true)]));
+      if (detail.getBoundingClientRect().top > innerHeight - 120) detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     };
     const timeText = (event) => (event.time ? `${event.time}${event.endTime ? `–${event.endTime}` : ''}` : '');
     const card = (event) => el('button', {
       type: 'button',
       class: 'calendar-event',
       'data-status': event.status || 'none',
+      'data-id': event.id,
       'aria-pressed': String(view.selectedEvent === event.id),
       title: [timeText(event), event.title, event.place].filter(Boolean).join(' · '),
       onclick: (e) => { e.stopPropagation(); select(event); },
@@ -782,9 +786,9 @@
     const grid = el('div', { class: 'calendar-grid' }, [el('div', { class: 'calendar-top' }, [header, untimed]), el('div', { class: 'calendar-timeline' }, [hours, ...columns])]);
     for (const row of [header, untimed, grid.lastChild]) row.style.gridTemplateColumns = `64px repeat(${dates.length}, minmax(180px, 1fr))`;
     const scroll = el('div', { class: 'calendar-scroll', tabindex: '0', 'aria-label': t('日历，可滚动查看', 'Scrollable calendar') }, grid);
-    scroll.addEventListener('scroll', () => { view.calendarScroll = scroll.scrollTop; });
+    scroll.addEventListener('scroll', () => { view.calendarScroll = [scroll.scrollLeft, scroll.scrollTop]; });
     // Open at 08:00 (scroll up for earlier), then keep the position while editing.
-    requestAnimationFrame(() => { scroll.scrollTop = view.calendarScroll ?? 8 * HOUR; });
+    requestAnimationFrame(() => { [scroll.scrollLeft, scroll.scrollTop] = view.calendarScroll ?? [0, 8 * HOUR]; });
     const change = (date) => { view.calendarStart = date; view.calendarScroll = null; rerender(); };
     const nav = el('div', { class: 'calendar-nav' }, [
       el('button', { type: 'button', text: t('← 前 7 天', '← Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
