@@ -6,11 +6,12 @@ Private travel plans at **https://plan.dliu.com**, written like a blog: one trav
 - **Trip addresses** are `https://plan.dliu.com/plan/YYYYMMNN`: the year and month the trip was created, then a two-digit counter for that month (`20261000`, `20261001`, …).
 - **Share links** are `https://plan.dliu.com/plan/<id>?token=<token>`. Anyone holding one can view **and edit** that one trip (details, events, files) without signing in. They can't see other trips, delete the trip or manage sharing. On the plan page the Sharing row has *Share* (opens the device's share sheet, or copies the link) and *Create link*; once a link exists, *Share*, *Copy link* and *Stop sharing*. *Stop sharing* turns the link off immediately; sharing again makes a new link. Edits made through a link are recorded as "someone with the link". Old `/s/<token>` and `/trips/<id>` addresses redirect.
 - **Attachments.** Up to 200 files per trip and 50 MB each, attached to the trip itself (drag and drop onto the Files section, or 📎); events have no attachments of their own. Files go straight from the browser to a private S3 bucket using short-lived presigned URLs. Images, PDFs, text, audio and video open in the browser. Everything else, including HTML and SVG, always downloads as `application/octet-stream`.
-- **Export PDF.** The button opens the browser's print dialog ("Save as PDF"). The print stylesheet unfolds every day, drops the controls, and names the file after the plan title and dates.
+- **Download PDF.** In the Sharing row (share-link guests get it too). A separate Lambda (`lambda/pdf`) lays the plan out with [pdfkit](https://pdfkit.org) and an embedded Noto Sans SC font (Chinese and English): A4, a header with the site name and plan title, a footer with the plan's address, export time and page numbers, every day in full with coloured status bars, and clickable links. The file is named after the plan title and dates. The button shows a spinner while the PDF is made. No browser engine and no network access are involved; the function only reads the table.
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
    │            │  viewer-request: /plan/*, /trips/*, /s/*, /about, /security → /index.html
+   │            ├─ api/trips/*/pdf ──OAC──▶ Lambda function URL (lambda/pdf, read-only) ──▶ DynamoDB "Trips"
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken)
    │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
    │            │                                                        └──▶ S3 files bucket (presigns URLs)
@@ -33,7 +34,7 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, style.css)
 
 Note: CloudFront access logs record full URLs, so share tokens in `?token=` appear in the TrafficMonitor logs. The app itself sends the token in a header.
 
-Hardening: strict CSP (`script-src 'self'; style-src 'self'`, no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API Lambda capped at 20 concurrent runs so a flood can't run up costs. Details are on `/security`.
+Hardening: strict CSP (`script-src 'self'; style-src 'self'`, no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API and PDF Lambdas capped at 20 and 5 concurrent runs so a flood can't run up costs. Details are on `/security`.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 

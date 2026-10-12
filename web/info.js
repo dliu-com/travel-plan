@@ -86,6 +86,7 @@ window.PlanInfo = (() => {
           { badge: t('应用', 'App'), tone: 'app', label: t('静态站点与 API', 'Site and API'), link: t('OAC 签名请求', 'OAC-signed requests'), nodes: [
             { icon: 's3', title: t('S3 站点桶', 'S3 site bucket'), text: 'index.html · app.js · style.css' },
             { icon: 'lambda', title: 'Lambda API', text: t('Node.js 22，函数 URL 仅接受 CloudFront', 'Node.js 22, function URL only accepts CloudFront') },
+            { icon: 'lambda', title: t('Lambda PDF 导出', 'Lambda PDF export'), text: t('pdfkit 排版，内嵌中文字体，只读数据库', 'pdfkit layout, embedded Chinese font, read-only database') },
           ] },
           { badge: t('数据', 'Data'), tone: 'private', label: t('私有数据', 'Private data'), link: t('IAM 最小权限', 'Least-privilege IAM'), nodes: [
             { icon: 'dynamodb', title: 'DynamoDB', text: t('行程与安排，按需计费，时间点恢复', 'Travel plans and events, on demand, point-in-time recovery') },
@@ -143,7 +144,7 @@ window.PlanInfo = (() => {
       )),
       table([t('服务', 'Service'), t('用途', 'What it does'), t('免费额度 / 价格', 'Free tier / price'), t('本站每月', 'This site, monthly')], [
         ['CloudFront', t('HTTPS、缓存、改写', 'HTTPS, caching, rewrites'), t('1 TB 流量 + 1000 万请求；函数 200 万次', '1 TB + 10M requests; 2M function runs'), '$0'],
-        ['Lambda', t('API', 'API'), t('100 万请求 + 40 万 GB-秒', '1M requests + 400k GB-seconds'), '$0'],
+        ['Lambda', t('API 与 PDF 导出', 'API and PDF export'), t('100 万请求 + 40 万 GB-秒', '1M requests + 400k GB-seconds'), '$0'],
         ['DynamoDB', t('行程数据', 'Travel plan data'), t('按需；25 GB 存储免费', 'On demand; 25 GB storage free'), t('< $0.01', '< $0.01')],
         ['S3', t('网站文件与附件', 'Site files and attachments'), t('约 $0.023 / GB·月', 'about $0.023 per GB-month'), t('按附件量，通常 < $0.05', 'by attachment size, usually < $0.05')],
         [t('数据传出', 'Data out'), t('附件下载', 'Attachment downloads'), t('每月 100 GB 免费', '100 GB a month free'), '$0'],
@@ -152,8 +153,8 @@ window.PlanInfo = (() => {
         ['CloudWatch Logs', t('API 日志，1 个月', 'API logs, 1 month'), t('5 GB 免费', '5 GB free'), '$0'],
       ]),
       callout('budget', t(
-        '预计合计：每月 $0–$0.10。最坏情况是一个行程放满 200 个 50 MB 的附件（10 GB），约每月 $0.23。API 最多同时运行 20 个实例，突发流量无法占满账户里其他网站共用的 Lambda 并发。',
-        'Expected total: $0–$0.10 a month. The worst case, one travel plan full of 200 × 50 MB attachments (10 GB), is about $0.23 a month. The API can run at most 20 copies at once, so a flood can’t use up the Lambda concurrency shared with the other dliu.com sites.',
+        '预计合计：每月 $0–$0.10。最坏情况是一个行程放满 200 个 50 MB 的附件（10 GB），约每月 $0.23。API 最多同时运行 20 个实例，PDF 导出最多 5 个，突发流量无法占满账户里其他网站共用的 Lambda 并发。',
+        'Expected total: $0–$0.10 a month. The worst case, one travel plan full of 200 × 50 MB attachments (10 GB), is about $0.23 a month. The API can run at most 20 copies at once and the PDF export 5, so a flood can’t use up the Lambda concurrency shared with the other dliu.com sites.',
       )),
     ));
 
@@ -172,10 +173,11 @@ window.PlanInfo = (() => {
       t('基础设施：AWS CDK v2（TypeScript），一个堆栈，区域 eu-west-1；证书在 us-east-1。', 'Infrastructure: AWS CDK v2 (TypeScript), one stack in eu-west-1; the certificate lives in us-east-1.'),
       t('前端：一个 HTML 文件、一个 CSS 文件和三个原生 JavaScript 文件，无构建步骤，无第三方脚本。', 'Front end: one HTML file, one CSS file and three plain JavaScript files. No build step and no third-party scripts.'),
       t('后端：Node.js 22 Lambda（512 MB，15 秒超时），只用 Node 自带模块和 Lambda 运行时自带的 AWS SDK。', 'Back end: a Node.js 22 Lambda (512 MB, 15-second timeout) using only Node built-ins and the AWS SDK that ships with the runtime.'),
+      t('PDF 导出：单独的 Lambda（1 GB，30 秒超时），用 pdfkit 排版并内嵌 Noto Sans SC 字体（只嵌入用到的字），带页眉、页脚和页码；不用浏览器引擎，也不访问网络。', 'PDF export: a separate Lambda (1 GB, 30-second timeout) that lays the plan out with pdfkit and an embedded Noto Sans SC font (only the characters used), with a header, footer and page numbers. No browser engine and no network access.'),
       t('S3 签名链接由 API 自己用 SigV4 生成，不额外引入依赖。', 'S3 signed URLs are made by the API itself with SigV4, without extra dependencies.'),
       t('数据：DynamoDB 全局表，按需计费，开启时间点恢复和删除保护；分享令牌通过 GSI 查找。', 'Data: a DynamoDB global table, on demand, with point-in-time recovery and deletion protection; share tokens are looked up through a GSI.'),
       t('行程编号：/plan/YYYYMMNN，即创建年月加两位序号；用条件写入避免重复。', 'Travel plan addresses: /plan/YYYYMMNN, the year and month created plus a two-digit number; conditional writes prevent clashes.'),
-      t('测试：Jest 覆盖 API、存储、验证、S3 签名和 CDK 堆栈；每次部署前自动运行。', 'Tests: Jest covers the API, storage, validation, S3 signing and the CDK stack, and runs before every deploy.'),
+      t('测试：Jest 覆盖 API、PDF 导出、存储、验证、S3 签名和 CDK 堆栈；每次部署前自动运行。', 'Tests: Jest covers the API, PDF export, storage, validation, S3 signing and the CDK stack, and runs before every deploy.'),
       t('流量：CloudFront 标准日志（含 Cookie）写入 TrafficMonitor 的 raw/plan/。', 'Traffic: CloudFront standard logs (with cookies) go to TrafficMonitor under raw/plan/.'),
     ])));
     return page;
@@ -216,11 +218,12 @@ window.PlanInfo = (() => {
             { icon: 'key', title: t('访问控制', 'Access control'), text: t('会话 Cookie 或该行程的令牌', 'Session cookie, or this travel plan’s token') },
             { icon: 'shield', title: t('请求检查', 'Request checks'), text: t('Origin、JSON、64 KB 上限', 'Origin, JSON, 64 KB limit') },
             { icon: 'check', title: t('输入验证', 'Validation'), text: t('长度、日期、链接协议、文件名', 'Lengths, dates, link schemes, file names') },
+            { icon: 'lambda', title: t('PDF 导出', 'PDF export'), text: t('同样的访问控制；独立函数，只读', 'Same access control; separate, read-only function') },
           ] },
           { badge: t('私有', 'Private'), tone: 'private', label: t('数据', 'Data'), link: t('最小权限 IAM', 'Least-privilege IAM'), nodes: [
-            { icon: 'dynamodb', title: 'DynamoDB', text: t('仅 API 可访问', 'API only') },
+            { icon: 'dynamodb', title: 'DynamoDB', text: t('仅 API 可访问（PDF 导出只读）', 'API only (PDF export reads)') },
             { icon: 's3', title: t('附件桶', 'Files bucket'), text: t('私有，签名链接 5–15 分钟有效', 'Private; signed URLs last 5–15 minutes') },
-            { icon: 'lock', title: 'SSM', text: t('客户端密钥，仅 API 可读', 'Client secret, readable by the API only') },
+            { icon: 'lock', title: 'SSM', text: t('客户端密钥，仅两个函数可读', 'Client secret, readable by the two functions only') },
           ] },
         ],
       }),
@@ -301,6 +304,7 @@ window.PlanInfo = (() => {
       t('写请求：Origin 必须是 https://plan.dliu.com，类型必须是 application/json，请求体不超过 64 KB', 'Writes: Origin must be https://plan.dliu.com, the type application/json and the body at most 64 KB'),
       t('附件：上传签名 15 分钟并锁定大小和类型；下载签名 5 分钟；只有图片、PDF、纯文本、音视频可在浏览器内打开', 'Attachments: upload URLs last 15 minutes and fix the size and type; download URLs last 5 minutes; only images, PDF, plain text, audio and video open in the browser'),
       t('Lambda：保留并发 20；IAM 只允许读写本表、本桶和 /travel-plan/ 参数', 'Lambda: reserved concurrency of 20; IAM only allows this table, this bucket and the /travel-plan/ parameters'),
+      t('PDF 导出：保留并发 5，只能读本表和 /travel-plan/ 参数，不能访问附件桶；只接受 GET；用户文字以纯文本排版，链接只保留 http(s)；PDF 不缓存', 'PDF export: reserved concurrency of 5; can only read this table and the /travel-plan/ parameters, not the files bucket; GET only; user text is laid out as plain text and only http(s) links are kept; PDFs are never cached'),
     ])));
 
     const refs = el('p', 'info-links');
