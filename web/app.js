@@ -646,7 +646,9 @@
       type: 'button',
       class: 'chip',
       'data-status': s,
-      title: t(`${statusHint(s)}——只看这些`, `${statusHint(s)} — show only these`),
+      // Instant tooltip (CSS) explaining the status; the native title was slow and easy to miss.
+      'data-tip': `${statusHint(s)}\n${view.filter === s ? t('点击显示全部', 'Click to show all') : t('点击只看这些', 'Click to show only these')}`,
+      'aria-label': `${statusName(s)} ${counts[s]}: ${statusHint(s)}`,
       'aria-pressed': String(view.filter === s),
       onclick: () => { view.filter = view.filter === s ? '' : s; rerender(); },
     }, [el('span', { class: 'dot', 'data-status': s }), `${statusName(s)} `, el('b', { text: counts[s] })]));
