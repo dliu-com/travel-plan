@@ -21,6 +21,18 @@ test('trips table has a share-token index and is protected', () => {
   template.hasResource('AWS::DynamoDB::GlobalTable', { DeletionPolicy: 'Retain' });
 });
 
+test('share-link usage counters live in their own expiring table, used by both functions', () => {
+  const [name] = Object.entries(template.findResources('AWS::DynamoDB::GlobalTable'))
+    .find(([, r]: any) => r.Properties.TimeToLiveSpecification?.AttributeName === 'expiresAt') as any;
+  for (const handler of ['index.handler', 'pdf/index.handler']) {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: handler,
+      Environment: { Variables: Match.objectLike({ LIMITS_TABLE: { Ref: name } }) },
+    });
+  }
+  template.hasResource('AWS::DynamoDB::GlobalTable', { DeletionPolicy: 'Delete' });
+});
+
 test('api can query the share index and read only its own parameters', () => {
   const statements = Object.values(template.findResources('AWS::IAM::Policy'))
     .flatMap((policy: any) => policy.Properties.PolicyDocument.Statement);

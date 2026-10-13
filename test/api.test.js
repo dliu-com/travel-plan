@@ -8,6 +8,7 @@ const { createHandler } = require('../lambda/api/index');
 const { NotConfigured } = require('../lambda/api/config');
 const { createMemoryFiles } = require('../scripts/memory-files');
 const { createMemoryStore } = require('../scripts/memory-store');
+const { GUEST_DAILY, LIMIT_MESSAGE, MAX_TRIP_BYTES } = require('../lambda/api/limits');
 
 const NOW = Date.UTC(2026, 9, 1);
 const config = { tenantId: 'tenant', clientId: 'client', clientSecret: 'secret', allowedDomain: 'dliu.com' };
@@ -190,6 +191,39 @@ describe('share links', () => {
     expect((await call('GET', `/api/trips/${unshared.id}`, { signedIn: false, token })).statusCode).toBe(403);
   });
 
+  test('guessed tokens are checked against the share index without reading any trip', async () => {
+    const { call, store } = setup();
+    const { trip } = await sharedTrip(call);
+    const getTrip = jest.spyOn(store, 'getTrip');
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token: 'A'.repeat(24) })).statusCode).toBe(403);
+    expect(getTrip).not.toHaveBeenCalled();
+  });
+
+  test('a leaked link has a daily allowance per trip; members are not limited', async () => {
+    const { call, store } = setup();
+    const { trip, token } = await sharedTrip(call);
+    const other = await sharedTrip(call);
+    const guest = { signedIn: false, token };
+    const key = `${trip.id}#2026-10-01`;
+
+    expect((await call('POST', `/api/trips/${trip.id}/events`, { ...guest, body: { title: 'A' } })).statusCode).toBe(201);
+    expect(store.quotas.get(key)).toMatchObject({ requests: 1, changes: 1, expiresAt: Date.UTC(2026, 9, 3) / 1000 });
+
+    store.quotas.get(key).changes = GUEST_DAILY.changes;
+    const refused = await call('POST', `/api/trips/${trip.id}/events`, { ...guest, body: { title: 'B' } });
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json.error).toBe(LIMIT_MESSAGE);
+    expect((await call('DELETE', `/api/trips/${trip.id}/events/${Object.keys(store.trips.get(trip.id).events)[0]}`, guest)).statusCode).toBe(429);
+    // Reading still works, members can still edit, and other trips have their own allowance.
+    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(200);
+    expect((await call('POST', `/api/trips/${trip.id}/events`, { body: { title: 'C' } })).statusCode).toBe(201);
+    expect((await call('POST', `/api/trips/${other.trip.id}/events`, { signedIn: false, token: other.token, body: { title: 'D' } })).statusCode).toBe(201);
+
+    store.quotas.get(key).requests = GUEST_DAILY.requests;
+    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(429);
+    expect(Object.values(store.trips.get(trip.id).events).map((e) => e.title).sort()).toEqual(['A', 'C', 'Inari']);
+  });
+
   test('old /s/<token> links find their trip', async () => {
     const { call } = setup();
     const { trip, token } = await sharedTrip(call);
@@ -241,6 +275,37 @@ describe('files', () => {
     expect((await call('GET', `/api/trips/${trip.id}/files/${fileId}?token=${token}`, { signedIn: false })).statusCode).toBe(302);
     expect((await call('GET', `/api/trips/${trip.id}/files/${fileId}`, { signedIn: false })).statusCode).toBe(401);
     expect((await call('DELETE', `/api/trips/${trip.id}/files/${fileId}`, { signedIn: false, token })).statusCode).toBe(200);
+  });
+
+  test('guests have daily upload and download allowances; every trip has a storage cap', async () => {
+    const { call, files, store } = setup();
+    const trip = await createTrip(call);
+    const token = (await call('POST', `/api/trips/${trip.id}/share`)).json.shareToken;
+    const guest = { signedIn: false, token };
+    const key = `${trip.id}#2026-10-01`;
+    const start = (size, options = guest) => call('POST', `/api/trips/${trip.id}/files`, { ...options, body: { name: 'big.mp4', size, type: 'video/mp4' } });
+
+    // Abandoned uploads count: the allowance is spent when the upload URL is handed out.
+    expect((await start(40 * 1024 * 1024)).statusCode).toBe(201);
+    expect(store.quotas.get(key)).toMatchObject({ uploads: 1, uploadBytes: 40 * 1024 * 1024 });
+    store.quotas.get(key).uploadBytes = GUEST_DAILY.uploadBytes - 1024;
+    expect((await start(2048)).statusCode).toBe(429);
+    expect((await start(1024)).statusCode).toBe(201);
+    store.quotas.get(key).uploads = GUEST_DAILY.uploads;
+    expect((await start(1)).statusCode).toBe(429);
+
+    const { fileId } = await upload(call, files, trip.id, { name: 'map.png', type: 'image/png', body: 'png' });
+    expect((await call('GET', `/api/trips/${trip.id}/files/${fileId}?token=${token}`, { signedIn: false })).statusCode).toBe(302);
+    expect(store.quotas.get(key).downloadBytes).toBe(3);
+    store.quotas.get(key).downloadBytes = GUEST_DAILY.downloadBytes - 2;
+    expect((await call('GET', `/api/trips/${trip.id}/files/${fileId}?token=${token}`, { signedIn: false })).statusCode).toBe(429);
+
+    // 1 GB per trip, members included.
+    store.trips.get(trip.id).files[fileId].size = MAX_TRIP_BYTES - 10;
+    const full = await start(11, {});
+    expect(full.statusCode).toBe(413);
+    expect(full.json.error).toBe('A travel plan can hold at most 1 GB of files');
+    expect((await start(10, {})).statusCode).toBe(201);
   });
 
   test('uploads are checked', async () => {

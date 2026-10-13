@@ -92,3 +92,21 @@ test('addFile reports a full trip as TooLarge', async () => {
   const client = fakeClient([conditionFailed(), { Item: { id: '20261000', files: {} } }]);
   await expect(createStore({ client, table: 'Trips', now }).addFile('20261000', 'f', {}, 'x')).rejects.toBeInstanceOf(TooLarge);
 });
+
+test('useQuota adds to a usage row unless a counter is full', async () => {
+  const client = fakeClient([{}, conditionFailed()]);
+  const store = createStore({ client, table: 'Trips', limitsTable: 'Limits', now });
+  expect(await store.useQuota('t#2026-10-01', { requests: 1, changes: 1 }, { requests: 4999, changes: 999 }, 123)).toBe(true);
+  expect(client.sent[0]).toMatchObject({
+    name: 'UpdateCommand',
+    input: {
+      TableName: 'Limits',
+      Key: { id: 't#2026-10-01' },
+      ConditionExpression: '(attribute_not_exists(#q0) OR #q0 <= :r0) AND (attribute_not_exists(#q1) OR #q1 <= :r1)',
+      UpdateExpression: 'ADD #q0 :a0, #q1 :a1 SET expiresAt = if_not_exists(expiresAt, :exp)',
+      ExpressionAttributeNames: { '#q0': 'requests', '#q1': 'changes' },
+      ExpressionAttributeValues: { ':a0': 1, ':a1': 1, ':r0': 4999, ':r1': 999, ':exp': 123 },
+    },
+  });
+  expect(await store.useQuota('t#2026-10-01', { requests: 1 }, { requests: 4999 }, 123)).toBe(false);
+});

@@ -3,6 +3,7 @@
 const auth = require('./auth');
 const { HttpError, createAccess, header } = require('./access');
 const { loadConfig, NotConfigured } = require('./config');
+const { LimitReached, MAX_TRIP_BYTES, tripBytes } = require('./limits');
 const { createFiles } = require('./s3');
 const { createStore, NotFound, TooLarge } = require('./store');
 const {
@@ -60,7 +61,7 @@ function createHandler(deps = {}) {
   const fetchImpl = deps.fetchImpl || ((...args) => fetch(...args));
   const clock = deps.now || Date.now;
 
-  const { access } = createAccess({ getConfig, store, clock });
+  const { access, useGuest } = createAccess({ getConfig, store, clock });
 
   // Cookies are SameSite=Lax; also insist that writes come from our own pages.
   function requireSameOrigin(event) {
@@ -101,6 +102,13 @@ function createHandler(deps = {}) {
     const membersOnly = () => {
       if (!member) throw new HttpError(403, 'Sign in to do that');
     };
+    // Share-link guests spend their trip's daily allowance; members aren't counted.
+    const guestUses = async (amounts) => {
+      if (!member) await useGuest(tripId, amounts);
+    };
+    const roomFor = (item, size) => {
+      if (tripBytes(item) + size > MAX_TRIP_BYTES) throw new TooLarge(`A travel plan can hold at most ${MAX_TRIP_BYTES / 1024 / 1024 / 1024} GB of files`);
+    };
 
     if (parts.length === 1) {
       membersOnly();
@@ -112,7 +120,11 @@ function createHandler(deps = {}) {
     }
     if (parts.length === 2) {
       if (method === 'GET') return json(200, toApiTrip(await getTrip(tripId)));
-      if (method === 'PUT') return json(200, toApiTrip(await store.updateTrip(tripId, parseTrip(readBody(event)), user)));
+      if (method === 'PUT') {
+        const fields = parseTrip(readBody(event));
+        await guestUses({ changes: 1 });
+        return json(200, toApiTrip(await store.updateTrip(tripId, fields, user)));
+      }
       if (method === 'DELETE') {
         membersOnly();
         await store.deleteTrip(tripId);
@@ -127,13 +139,18 @@ function createHandler(deps = {}) {
     }
     if (sub === 'events') {
       if (parts.length === 3 && method === 'POST') {
-        const { id, trip } = await store.addEvent(tripId, parseEvent(readBody(event)), user);
+        const fields = parseEvent(readBody(event));
+        await guestUses({ changes: 1 });
+        const { id, trip } = await store.addEvent(tripId, fields, user);
         return json(201, { eventId: id, trip: toApiTrip(trip) });
       }
       if (parts.length === 4 && method === 'PUT') {
-        return json(200, { trip: toApiTrip(await store.updateEvent(tripId, subId, parseEvent(readBody(event)), user)) });
+        const fields = parseEvent(readBody(event));
+        await guestUses({ changes: 1 });
+        return json(200, { trip: toApiTrip(await store.updateEvent(tripId, subId, fields, user)) });
       }
       if (parts.length === 4 && method === 'DELETE') {
+        await guestUses({ changes: 1 });
         return json(200, { trip: toApiTrip(await store.deleteEvent(tripId, subId, user)) });
       }
     }
@@ -143,6 +160,9 @@ function createHandler(deps = {}) {
         const upload = parseUpload(readBody(event));
         const item = await getTrip(tripId);
         if (Object.keys(item.files || {}).length >= MAX_FILES) throw new TooLarge(`A travel plan can have at most ${MAX_FILES} files`);
+        roomFor(item, upload.size);
+        // Counted when the upload URL is handed out, so abandoned uploads count too.
+        await guestUses({ uploads: 1, uploadBytes: upload.size });
         const fileId = newFileId();
         const { url, headers } = files.uploadUrl(tripId, fileId, upload);
         return json(201, { fileId, uploadUrl: url, uploadHeaders: headers });
@@ -150,6 +170,7 @@ function createHandler(deps = {}) {
       if (parts.length === 4 && method === 'GET') {
         const file = ((await getTrip(tripId)).files || {})[subId];
         if (!file) throw new NotFound('File not found');
+        await guestUses({ downloadBytes: Number(file.size) || 0 });
         const params = event.queryStringParameters || {};
         return redirect(files.downloadUrl(tripId, subId, file, { download: params.download === '1' }));
       }
@@ -157,14 +178,19 @@ function createHandler(deps = {}) {
         const update = parseFileUpdate(readBody(event));
         const item = await getTrip(tripId);
         // Rename a kept file, or keep a finished upload.
-        if ((item.files || {})[subId]) return json(200, { trip: toApiTrip(await store.updateFile(tripId, subId, update, user)) });
+        if ((item.files || {})[subId]) {
+          await guestUses({ changes: 1 });
+          return json(200, { trip: toApiTrip(await store.updateFile(tripId, subId, update, user)) });
+        }
         const uploaded = await files.uploaded(tripId, subId);
         if (!uploaded) throw new NotFound('Upload not found. Try again.');
         const file = parseUpload({ ...update, size: uploaded.size, type: uploaded.type });
+        roomFor(item, file.size);
         await files.keep(tripId, subId);
         return json(201, { trip: toApiTrip(await store.addFile(tripId, subId, file, user)) });
       }
       if (parts.length === 4 && method === 'DELETE') {
+        await guestUses({ changes: 1 });
         const trip = await store.deleteFile(tripId, subId, user);
         await files.remove(tripId, subId);
         return json(200, { trip: toApiTrip(trip) });
@@ -197,7 +223,7 @@ function createHandler(deps = {}) {
       if (!path.startsWith('/api/')) return json(404, { error: 'Not found' });
       return await api(method, path.slice('/api/'.length).split('/').filter(Boolean), event);
     } catch (error) {
-      if (error instanceof HttpError) return json(error.status, { error: error.message });
+      if (error instanceof HttpError || error instanceof LimitReached) return json(error.status, { error: error.message });
       if (error instanceof BadRequest) return json(400, { error: error.message });
       if (error instanceof NotFound) return json(404, { error: error.message });
       if (error instanceof TooLarge) return json(413, { error: error.message });

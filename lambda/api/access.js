@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const auth = require('./auth');
 const { NotConfigured } = require('./config');
+const { createGuestLimits } = require('./limits');
 const { SHARE_TOKEN } = require('./trips');
 
 // Recorded as the editor when someone changes a trip through its share link.
@@ -37,19 +38,26 @@ function createAccess({ getConfig, store, clock }) {
     }
   }
 
+  const useGuest = createGuestLimits({ store, clock });
+
   // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip,
   // but can't see other trips, delete it or change its link. The token comes in a header (or ?token= for images).
+  // Guests also use up a daily allowance for the trip (see limits.js), so a leaked link can't run up the bill.
   async function access(event, tripId) {
     const session = await optionalSession(event);
     if (session) return { user: session.name || session.user, member: true };
     const token = header(event, 'x-plan-token') || (event.queryStringParameters || {}).token;
     if (!token || tripId === undefined) throw new HttpError(401, 'Sign in to do that');
-    const item = SHARE_TOKEN.test(token) ? await store.getTrip(tripId) : null;
-    if (!item || !item.shareToken || !sameToken(token, item.shareToken)) throw new HttpError(403, 'This link no longer works');
+    const refused = new HttpError(403, 'This link no longer works');
+    // Look the token up in the small keys-only index first, so guessing tokens never reads a whole trip.
+    if (!SHARE_TOKEN.test(token) || await store.sharedTripId(token) !== tripId) throw refused;
+    await useGuest(tripId, { requests: 1 });
+    const item = await store.getTrip(tripId);
+    if (!item || !item.shareToken || !sameToken(token, item.shareToken)) throw refused;
     return { user: GUEST, member: false };
   }
 
-  return { access, optionalSession };
+  return { access, optionalSession, useGuest };
 }
 
 module.exports = { GUEST, HttpError, createAccess, header, sameToken };
