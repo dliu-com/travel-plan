@@ -81,6 +81,14 @@ export class TravelPlanStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // Daily usage counters for share-link guests (lambda/api/limits.js). Rows expire via TTL; nothing worth keeping.
+    const limitsTable = new dynamodb.TableV2(this, 'Limits', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billing: dynamodb.Billing.onDemand(),
+      timeToLiveAttribute: 'expiresAt',
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
     // Attachments: private, uploaded and downloaded with presigned URLs from the API.
     // Uploads land in pending/ and are moved to trips/<id>/ once confirmed; abandoned ones expire.
     const filesBucket = new s3.Bucket(this, 'FilesBucket', {
@@ -115,6 +123,7 @@ export class TravelPlanStack extends Stack {
         SITE_URL: siteUrl,
         ROOT_DOMAIN: rootDomain,
         TABLE_NAME: table.tableName,
+        LIMITS_TABLE: limitsTable.tableName,
         FILES_BUCKET: filesBucket.bucketName,
         PARAMETER_PREFIX,
       },
@@ -124,6 +133,7 @@ export class TravelPlanStack extends Stack {
       }),
     });
     table.grantReadWriteData(apiHandler);
+    limitsTable.grantReadWriteData(apiHandler);
     filesBucket.grantReadWrite(apiHandler);
     filesBucket.grantDelete(apiHandler);
     // Both functions read the sign-in secrets (the session key) from SSM.
@@ -143,7 +153,7 @@ export class TravelPlanStack extends Stack {
     const functionUrl = apiHandler.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
 
     // PDF export: lays out a plan with pdfkit and an embedded CJK font. Reuses the API's access checks,
-    // so the asset is lambda/ (api/ + pdf/). Read-only on the table; no access to the attachments bucket.
+    // so the asset is lambda/ (api/ + pdf/). Read-only on the trips table (it only writes guests' usage counters); no access to the attachments bucket.
     const pdfHandler = new lambda.Function(this, 'PdfHandler', {
       runtime: lambda.Runtime.NODEJS_22_X,
       handler: 'pdf/index.handler',
@@ -156,6 +166,7 @@ export class TravelPlanStack extends Stack {
         SITE_URL: siteUrl,
         ROOT_DOMAIN: rootDomain,
         TABLE_NAME: table.tableName,
+        LIMITS_TABLE: limitsTable.tableName,
         PARAMETER_PREFIX,
       },
       logGroup: new logs.LogGroup(this, 'PdfLogs', {
@@ -164,6 +175,7 @@ export class TravelPlanStack extends Stack {
       }),
     });
     table.grantReadData(pdfHandler);
+    limitsTable.grantWriteData(pdfHandler);
     readSecrets(pdfHandler);
     const pdfUrl = pdfHandler.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
 

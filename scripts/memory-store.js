@@ -6,6 +6,7 @@ const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId } = require
 
 function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
   const trips = new Map();
+  const quotas = new Map();
   const clone = (value) => (value == null ? value : structuredClone(value));
   const need = (id) => {
     const trip = trips.get(id);
@@ -24,6 +25,18 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
     },
     async getSharedTrip(token) {
       return clone([...trips.values()].find((trip) => trip.shareToken === token) || null);
+    },
+    async sharedTripId(token) {
+      const trip = [...trips.values()].find((item) => item.shareToken === token);
+      return trip ? trip.id : null;
+    },
+    quotas,
+    async useQuota(key, amounts, room, expiresAt) {
+      const row = quotas.get(key) || { expiresAt };
+      if (Object.keys(amounts).some((name) => (row[name] || 0) > room[name])) return false;
+      for (const [name, n] of Object.entries(amounts)) row[name] = (row[name] || 0) + n;
+      quotas.set(key, row);
+      return true;
     },
     async shareTrip(id, user) {
       const trip = need(id);

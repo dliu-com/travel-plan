@@ -24,7 +24,7 @@ const isTooLarge = (error) => error && error.name === 'ValidationException' && /
 // Trips created before attachments existed have no files map, so files.<id> can't be set yet.
 const isMissingMap = (error) => error && error.name === 'ValidationException' && /document path/i.test(error.message || '');
 
-function createStore({ client, table = process.env.TABLE_NAME, now = () => new Date().toISOString() } = {}) {
+function createStore({ client, table = process.env.TABLE_NAME, limitsTable = process.env.LIMITS_TABLE, now = () => new Date().toISOString() } = {}) {
   const lib = require('@aws-sdk/lib-dynamodb');
   const send = (command) => (client || documentClient()).send(command);
 
@@ -59,9 +59,9 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
       return result.Item || null;
     },
 
-    // The index is eventually consistent, so re-check the token on the item itself:
-    // a revoked link stops working immediately.
-    async getSharedTrip(token) {
+    // Which trip a share token belongs to, from the small keys-only index: checking a wrong token
+    // never reads (or pays for) a whole trip. The index lags slightly, so callers re-check the item.
+    async sharedTripId(token) {
       const result = await send(new lib.QueryCommand({
         TableName: table,
         IndexName: SHARE_INDEX,
@@ -70,9 +70,40 @@ function createStore({ client, table = process.env.TABLE_NAME, now = () => new D
         Limit: 1,
       }));
       const key = (result.Items || [])[0];
-      if (!key) return null;
-      const item = await this.getTrip(key.id);
+      return key ? key.id : null;
+    },
+
+    // The index is eventually consistent, so re-check the token on the item itself:
+    // a revoked link stops working immediately.
+    async getSharedTrip(token) {
+      const id = await this.sharedTripId(token);
+      if (!id) return null;
+      const item = await this.getTrip(id);
       return item && item.shareToken === token ? item : null;
+    },
+
+    // Add amounts to a usage row (created on first use) unless a counter would go past its limit;
+    // room[name] is the highest value the counter may have before adding. Returns false when refused.
+    async useQuota(key, amounts, room, expiresAt) {
+      const names = Object.keys(amounts);
+      try {
+        await send(new lib.UpdateCommand({
+          TableName: limitsTable,
+          Key: { id: key },
+          ConditionExpression: names.map((_, i) => `(attribute_not_exists(#q${i}) OR #q${i} <= :r${i})`).join(' AND '),
+          UpdateExpression: `ADD ${names.map((_, i) => `#q${i} :a${i}`).join(', ')} SET expiresAt = if_not_exists(expiresAt, :exp)`,
+          ExpressionAttributeNames: Object.fromEntries(names.map((name, i) => [`#q${i}`, name])),
+          ExpressionAttributeValues: {
+            ...Object.fromEntries(names.map((name, i) => [`:a${i}`, amounts[name]])),
+            ...Object.fromEntries(names.map((name, i) => [`:r${i}`, room[name]])),
+            ':exp': expiresAt,
+          },
+        }));
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
     },
 
     async shareTrip(id, user) {

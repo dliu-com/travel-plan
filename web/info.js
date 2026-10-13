@@ -153,8 +153,8 @@ window.PlanInfo = (() => {
         ['CloudWatch Logs', t('API 日志，1 个月', 'API logs, 1 month'), t('5 GB 免费', '5 GB free'), '$0'],
       ]),
       callout('budget', t(
-        '预计合计：每月 $0–$0.10。最坏情况是一个行程放满 200 个 50 MB 的附件（10 GB），约每月 $0.23。API 最多同时运行 20 个实例，PDF 导出最多 5 个，突发流量无法占满账户里其他网站共用的 Lambda 并发。',
-        'Expected total: $0–$0.10 a month. The worst case, one travel plan full of 200 × 50 MB attachments (10 GB), is about $0.23 a month. The API can run at most 20 copies at once and the PDF export 5, so a flood can’t use up the Lambda concurrency shared with the other dliu.com sites.',
+        '预计合计：每月 $0–$0.10。每个行程的附件总共不超过 1 GB（约每月 $0.02）。分享链接每天对每个行程有用量上限（见安全页），即使链接泄露也只能产生很少的费用。API 最多同时运行 20 个实例，PDF 导出最多 5 个，突发流量无法占满账户里其他网站共用的 Lambda 并发。',
+        'Expected total: $0–$0.10 a month. Each travel plan holds at most 1 GB of attachments (about $0.02 a month), and share links have a daily allowance per plan (see Security), so even a leaked link can only cost a little. The API can run at most 20 copies at once and the PDF export 5, so a flood can’t use up the Lambda concurrency shared with the other dliu.com sites.',
       )),
     ));
 
@@ -270,14 +270,14 @@ window.PlanInfo = (() => {
         [t('有人在行程或安排里写入恶意脚本（XSS）', 'Someone puts a malicious script in a travel plan or event (XSS)'), LOW, t('所有内容用 textContent 渲染，从不拼接 HTML；CSP 只允许本站脚本，禁止内联；链接仅 http(s)', 'Everything is rendered with textContent, never as HTML; the CSP only allows our own scripts and no inline code; links must be http(s)')],
         [t('上传恶意 HTML/SVG 来窃取会话', 'Uploading HTML or SVG to steal sessions'), LOW, t('网页类文件强制下载；附件来自 S3 域名，接触不到 plan.dliu.com 的 Cookie', 'Web content is forced to download; files come from the S3 domain, which cannot reach plan.dliu.com cookies')],
         [t('上传病毒或伪装扩展名的文件', 'Uploading malware or files with disguised extensions'), MEDIUM, t('清除文件名中的方向控制字符；危险类型只能下载；但没有病毒扫描，打开前请确认来源', 'Direction marks are stripped from names; risky types only download; but there is no virus scan, so check before opening')],
-        [t('分享链接泄露', 'A share link leaks'), MEDIUM, t('令牌只能用于一个行程，不能删除行程；随时可用“停止分享”作废，再分享即得新链接', 'A token works for one travel plan and cannot delete it; Stop sharing revokes it at once, and sharing again makes a new link')],
+        [t('分享链接泄露', 'A share link leaks'), MEDIUM, t('令牌是 144 位随机数，只能用于一个行程，不能删除行程；每天的修改、上传、下载和 PDF 导出有上限；随时可用“停止分享”作废，再分享即得新链接', 'The token is 144 random bits and works for one travel plan only, which it cannot delete; changes, uploads, downloads and PDF exports have a daily cap; Stop sharing revokes it at once, and sharing again makes a new link')],
         [t('暴力猜测令牌或行程编号', 'Guessing tokens or travel plan ids'), LOW, t('144 位随机令牌，实际上无法猜中；编号可猜，但没有令牌或登录只会得到相同的拒绝', '144-bit random tokens are infeasible to guess; ids are guessable, but without a token or sign-in every guess gets the same refusal')],
         [t('跨站请求伪造（CSRF）', 'Cross-site request forgery'), LOW, t('SameSite=Lax 会话 Cookie；写请求必须带 plan.dliu.com 的 Origin 和 JSON 类型', 'SameSite=Lax session cookie; writes need the plan.dliu.com Origin and a JSON body')],
         [t('点击劫持', 'Clickjacking'), LOW, 'X-Frame-Options: DENY · frame-ancestors \'none\''],
         [t('窃取或伪造会话', 'Stealing or forging a session'), LOW, t('HMAC-SHA256 签名，HttpOnly、Secure、__Host- 前缀；登录使用 PKCE、state、nonce 并校验 id_token', 'HMAC-SHA256 signature, HttpOnly, Secure, __Host- prefix; sign-in uses PKCE, state and nonce and verifies the id_token')],
         [t('非组织账号登录', 'Signing in from outside the organisation'), LOW, t('只信任 dliu.com 租户，且用户名必须以 @dliu.com 结尾', 'Only the dliu.com tenant is trusted, and the username must end in @dliu.com')],
         [t('绕过 CloudFront 直接访问后端', 'Going around CloudFront to the back end'), LOW, t('Lambda 函数 URL 需 IAM 签名，S3 桶阻止所有公开访问，只信任 CloudFront OAC', 'The Lambda URL needs IAM signing and the buckets block all public access; only CloudFront OAC is trusted')],
-        [t('刷流量造成费用或拖垮其他网站', 'Floods that run up costs or starve other sites'), MEDIUM, t('并发上限 20；上传大小和数量有上限，未确认的上传 1 天后删除；没有 WAF 或限流', 'Concurrency capped at 20; upload size and count are limited and unconfirmed uploads expire after a day; no WAF or rate limit')],
+        [t('刷流量造成费用或拖垮其他网站', 'Floods that run up costs or starve other sites'), MEDIUM, t('并发上限 20；每个行程最多 1 GB 附件；分享链接每天每个行程最多 5000 次请求、1000 次修改、50 次上传（500 MB）、10 GB 下载、50 次 PDF；未确认的上传 1 天后删除；没有 WAF', 'Concurrency capped at 20; at most 1 GB of files per travel plan; per plan per day a share link gets at most 5,000 requests, 1,000 changes, 50 uploads (500 MB), 10 GB of downloads and 50 PDFs; unconfirmed uploads expire after a day; no WAF')],
         [t('访客添加钓鱼链接或删除安排', 'A guest adds phishing links or deletes events'), MEDIUM, t('仅限持链接者；记录最后修改人；DynamoDB 时间点恢复可回滚 35 天内的数据', 'Only link holders can; the last editor is recorded; DynamoDB point-in-time recovery can roll back 35 days')],
         [t('数据被误删', 'Data deleted by mistake'), LOW, t('表开启删除保护和时间点恢复；表和附件桶在堆栈删除时保留', 'The table has deletion protection and point-in-time recovery; the table and files bucket are retained if the stack is removed')],
         [t('客户端密钥泄露', 'The client secret leaks'), LOW, t('存放在 SSM 加密参数中，仅 API 角色可读；不在代码或日志里', 'Kept in an encrypted SSM parameter readable only by the API role; never in code or logs')],
@@ -287,7 +287,7 @@ window.PlanInfo = (() => {
     page.append(section(t('已接受的风险', 'Accepted residual risks'), list([
       t('持分享链接的人可以编辑或删除安排、添加链接和上传文件。只把链接发给信任的人。', 'Anyone with a share link can edit or delete events, add links and upload files. Only send links to people you trust.'),
       t('令牌在网址中，会出现在浏览器历史和私有的 CloudFront/TrafficMonitor 访问日志里。', 'Tokens are in the URL, so they appear in browser history and in the private CloudFront and TrafficMonitor access logs.'),
-      t('没有 WAF 或速率限制；并发上限能保护其他网站，但不能完全阻止刷流量带来的少量费用。', 'There is no WAF or rate limit; the concurrency cap protects the other sites but cannot stop a flood costing a little money.'),
+      t('没有 WAF：分享链接的用量上限和并发上限限制了损失，但大量被拒绝的请求仍会产生少量 Lambda 费用。下载链接在 5 分钟内可重复使用。', 'There is no WAF: share-link allowances and the concurrency cap limit the damage, but a flood of refused requests still costs a little in Lambda runs. A download link can be reused for 5 minutes.'),
       t('附件没有病毒扫描。伪装成图片或文本的 HTML 会以图片/文本类型从 S3 显示，浏览器不会把它当网页执行。', 'Attachments are not virus-scanned. HTML disguised as an image or text is served from S3 with that type, and browsers do not run it as a page.'),
       t('会话无法在服务端撤销：被移出组织的成员最多还能用 30 天。轮换 Entra 客户端密钥会让所有人立即退出。', 'Sessions cannot be revoked on the server: someone removed from the organisation keeps access for up to 30 days. Rotating the Entra client secret signs everyone out at once.'),
       t('退出登录是 GET 请求，其他网站可以让你退出（影响很小）。', 'Sign-out is a GET request, so another site could sign you out (low impact).'),

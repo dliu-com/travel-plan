@@ -3,6 +3,7 @@
 // GET /api/trips/<id>/pdf: the travel plan as a PDF download.
 // Same access rules as the API: members, or the plan's share link (x-plan-token header).
 const { HttpError, createAccess } = require('../api/access');
+const { LimitReached } = require('../api/limits');
 const { loadConfig, NotConfigured } = require('../api/config');
 const { createStore } = require('../api/store');
 const { TRIP_ID, toApiTrip } = require('../api/trips');
@@ -33,7 +34,7 @@ function createHandler(deps = {}) {
   const getConfig = deps.loadConfig || loadConfig;
   const store = deps.store || createStore();
   const clock = deps.now || Date.now;
-  const { access } = createAccess({ getConfig, store, clock });
+  const { access, useGuest } = createAccess({ getConfig, store, clock });
 
   return async function handler(event) {
     const method = (event.requestContext && event.requestContext.http && event.requestContext.http.method) || 'GET';
@@ -44,7 +45,8 @@ function createHandler(deps = {}) {
       if (method !== 'GET') throw new HttpError(405, 'Method not allowed');
       const id = match[1];
       if (!TRIP_ID.test(id)) throw new HttpError(404, 'Travel plan not found');
-      await access(event, id);
+      const { member } = await access(event, id);
+      if (!member) await useGuest(id, { pdfs: 1 });
       const item = await store.getTrip(id);
       if (!item) throw new HttpError(404, 'Travel plan not found');
 
@@ -64,7 +66,7 @@ function createHandler(deps = {}) {
         isBase64Encoded: true,
       };
     } catch (error) {
-      if (error instanceof HttpError) return json(error.status, { error: error.message });
+      if (error instanceof HttpError || error instanceof LimitReached) return json(error.status, { error: error.message });
       if (error instanceof NotConfigured) return json(503, { error: 'Sign-in is not configured yet. Run "make set-secrets".' });
       console.error(JSON.stringify({ message: 'PDF export failed', method, path, error: error.message, stack: error.stack }));
       return json(500, { error: 'Internal error' });

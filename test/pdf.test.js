@@ -9,6 +9,7 @@ const pdf = require('../lambda/pdf/index');
 const { clean, pdfFileName, renderPdf, safeTimeZone } = require('../lambda/pdf/render');
 const { createMemoryFiles } = require('../scripts/memory-files');
 const { createMemoryStore } = require('../scripts/memory-store');
+const { GUEST_DAILY } = require('../lambda/api/limits');
 
 const NOW = Date.UTC(2026, 9, 1);
 const config = { tenantId: 'tenant', clientId: 'client', clientSecret: 'secret', allowedDomain: 'dliu.com' };
@@ -35,7 +36,7 @@ function setup() {
     const isJson = (res.headers['content-type'] || '').startsWith('application/json');
     return { ...res, json: isJson ? JSON.parse(res.body) : undefined };
   };
-  return { call: request(apiHandler), exportPdf: request(pdfHandler) };
+  return { store, call: request(apiHandler), exportPdf: request(pdfHandler) };
 }
 
 async function kyoto(call) {
@@ -101,6 +102,18 @@ describe('/api/trips/<id>/pdf', () => {
 
     await call('DELETE', `/api/trips/${trip.id}/share`);
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(403);
+  });
+
+  test('share-link guests have a daily PDF allowance; members do not', async () => {
+    const { store, call, exportPdf } = setup();
+    const trip = await kyoto(call);
+    const { shareToken } = (await call('POST', `/api/trips/${trip.id}/share`)).json;
+    expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(200);
+    const usage = store.quotas.get(`${trip.id}#2026-10-01`);
+    expect(usage).toMatchObject({ requests: 1, pdfs: 1 });
+    usage.pdfs = GUEST_DAILY.pdfs;
+    expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(429);
+    expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`)).statusCode).toBe(200);
   });
 
   test('unknown plans, bad paths and other methods are rejected', async () => {

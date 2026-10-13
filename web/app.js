@@ -43,6 +43,8 @@
     'Link must be a full URL starting with https://': '链接须为以 https:// 开头的完整网址。',
     'Link must start with http:// or https://': '链接须以 http:// 或 https:// 开头。',
     'This travel plan is too long to export as a PDF': '行程内容太多，无法导出 PDF。',
+    'This share link has reached today’s limit for this travel plan. Try again tomorrow, or sign in.': '此分享链接今天对这个行程的使用已达上限，请明天再试或登录。',
+    'A travel plan can hold at most 1 GB of files': '每个行程的文件总共不能超过 1 GB。',
     'Internal error': '服务器出错，请稍后再试。',
   };
 
