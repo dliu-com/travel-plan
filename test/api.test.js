@@ -17,7 +17,7 @@ function setup() {
   const store = createMemoryStore({ now: () => new Date(NOW).toISOString() });
   const files = createMemoryFiles();
   const handler = createHandler({ store, files, loadConfig: async () => config, now: () => NOW });
-  const session = auth.sign({ user: 'user@example.com', name: 'Dewei', exp: NOW / 1000 + 3600 }, auth.sessionKey(config));
+  const session = auth.sign({ typ: 'session', user: 'user@example.com', name: 'Dewei', exp: NOW / 1000 + 3600 }, auth.sessionKey(config));
 
   function call(method, path, { body, signedIn = true, origin = SITE_URL, contentType = 'application/json', token } = {}) {
     const headers = {};

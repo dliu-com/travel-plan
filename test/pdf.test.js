@@ -19,7 +19,7 @@ function setup() {
   const deps = { store, files: createMemoryFiles(), loadConfig: async () => config, now: () => NOW };
   const apiHandler = api.createHandler(deps);
   const pdfHandler = pdf.createHandler(deps);
-  const session = auth.sign({ user: 'user@example.com', name: 'Dewei', exp: NOW / 1000 + 3600 }, auth.sessionKey(config));
+  const session = auth.sign({ typ: 'session', user: 'user@example.com', name: 'Dewei', exp: NOW / 1000 + 3600 }, auth.sessionKey(config));
 
   const request = (handler) => async (method, path, { body, signedIn = true, token } = {}) => {
     const headers = { origin: SITE_URL };

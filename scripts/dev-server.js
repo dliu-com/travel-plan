@@ -28,7 +28,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 const LOCAL_SESSION = 'plan_dev_session';
 
 function sessionCookie() {
-  const value = auth.sign({ user: 'dev@dliu.com', name: 'Dev User', exp: Math.floor(Date.now() / 1000) + 86400 }, auth.sessionKey(config));
+  const value = auth.sign({ typ: 'session', user: 'dev@dliu.com', name: 'Dev User', exp: Math.floor(Date.now() / 1000) + 86400 }, auth.sessionKey(config));
   return `${LOCAL_SESSION}=${value}; Path=/; HttpOnly; SameSite=Lax`;
 }
 
