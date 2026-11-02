@@ -7,7 +7,7 @@
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   /* Event statuses: part of the plan content, not the site chrome. */
   --confirmed: #1a7f37; --confirmed-soft: #e6f4ea;
-  --planned: #2563eb; --planned-soft: #eef3fe;
+  --planned: var(--dl-accent); --planned-soft: var(--dl-accent-soft);
   --proposed: #9a6700; --proposed-soft: #fbf3dc;
   --option: #7a4fa3; --option-soft: #f1eaf8;
 }

@@ -22,16 +22,19 @@ test('every page loads the shared stylesheets before its own', () => {
 test('every page has the shared header with the DL icon, and the shared footer', () => {
   for (const html of PAGES) {
     const page = read(`web/${html}.html`);
-    expect(page).toContain('<link rel="icon" type="image/png" sizes="64x64" href="/icon.png">');
+    expect(page).toContain('<link rel="icon" href="/logo.svg" type="image/svg+xml">');
     expect(page).toContain('<body class="dl-page">');
     expect(page).toContain('<header class="dl-header">');
     // The app's own logo and name, top left; the shared DL logo starts the footer.
-    expect(page).toContain('<a class="dl-brand" href="/"><img class="dl-logo" src="/icon.png" alt="" width="32" height="32">DL Travel Plan</a>');
+    expect(page).toContain('<a class="dl-brand" href="/"><img class="dl-logo" src="/logo.svg" alt="" width="32" height="32">DL Travel Plan</a>');
     expect(page).toContain('<nav class="dl-nav" aria-label="Site">');
     expect(page).toMatch(/<main class="dl-main[" ]/);
     expect(page).toContain(`<footer class="dl-footer"><a class="dl-footer-logo" href="https://dliu.com" aria-label="dliu.com"><img src="${DL_ICON}" alt="" width="24" height="24"></a> <a href="https://dliu.com">dliu.com</a>`);
   }
-  expect(fs.existsSync(path.join(__dirname, '..', 'web/icon.png'))).toBe(true);
+  expect(read('web/logo.svg')).toContain('fill="#209cee"');
+  expect(fs.existsSync(path.join(__dirname, '..', 'web/icon.png'))).toBe(false);
+  // App colours come from the shared palette, not the old accent blues.
+  expect(read('web/style.css')).not.toMatch(/#2563eb|#1d4ed8|#eef3fe|#bfdbfe|rgba\(\s*37,\s*99,\s*235/i);
   // The script translates the name without dropping the logo.
   expect(read('web/app.js')).toContain("document.querySelector('.dl-brand').lastChild.nodeValue = brand();");
 });
