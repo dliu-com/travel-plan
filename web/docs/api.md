@@ -14,7 +14,8 @@ The managed API accepts Microsoft-issued user access tokens. It can list and rea
 4. Managed requests do not need `Origin`, website cookies, `x-plan-token` or `x-amz-content-sha256`.
 5. Request only user-authorized operations. Do not run write or delete examples just to check a token. `PUT` replaces every field of a plan or event: read the current object first and send it back with only the intended changes. There is no ETag or conditional update; serialize changes to the same plan.
 6. Treat presigned storage URLs (`url`, `uploadUrl`) as credentials: never print, share, log or save them. Use them without the bearer token. The API never redirects; do not follow redirects with credentials.
-7. Errors come from either the gateway (`{"message":"..."}`) or the travel plan functions (`{"error":"..."}`).
+7. Every plan has a share link, returned as `shareUrl` when you read a plan. To see a plan the way people see it, open that link in a browser (see [Viewing a plan](#viewing-a-plan)). The link is a long-lived credential: give it only to the user, and never post or log it anywhere else.
+8. Errors come from either the gateway (`{"message":"..."}`) or the travel plan functions (`{"error":"..."}`).
 
 ## Endpoint summary
 
@@ -35,7 +36,7 @@ The managed API accepts Microsoft-issued user access tokens. It can list and rea
 | [DELETE /api/trips/{tripId}/files/{fileId}](#delete-api-trips-tripid-files-fileid) | `trip.delete` | Delete an attachment |
 | [GET /api/trips/{tripId}/pdf](#get-api-trips-tripid-pdf) | `trip.read` | Export the plan as a PDF |
 
-`trip.write` does not include `trip.delete`: every DELETE needs `trip.delete`. Share links cannot be created, stopped or read through this API (the website's share routes and `/api/shared/*` are not published here, and `shareToken` is never returned). There is no PATCH, sign-in or token-management route.
+`trip.write` does not include `trip.delete`: every DELETE needs `trip.delete`. Every plan has a share link, and reading a plan returns it as `shareUrl` (needs `trip.read`); links are not created or turned off separately. `/api/shared/*` is not published here, and the bare `shareToken` is never returned. There is no PATCH, sign-in or token-management route.
 
 ## Authentication and access
 
@@ -83,7 +84,6 @@ Returned by `GET /api/trips`, newest first (plans without dates first):
   "endDate": "2026-11-16",
   "travellers": ["Dewei", "Alex"],
   "excerpt": "First 280 characters of the description…",
-  "shared": false,
   "updatedAt": "2026-10-01T12:00:00.000Z"
 }
 ```
@@ -119,7 +119,7 @@ Returned by the trip, event and file routes:
   ],
   "updatedAt": "2026-10-01T12:00:00.000Z",
   "updatedBy": "Dewei Liu",
-  "shared": false
+  "shareUrl": "https://plan.dliu.com/plan/20261001?token=…"
 }
 ```
 
@@ -129,7 +129,7 @@ Returned by the trip, event and file routes:
 | `events` | Sorted by date (undated last), then all-day events, then time. `endTime` appears only when set |
 | `status` | One of `confirmed`, `planned`, `proposed`, `option`, or empty |
 | `files` | Attachments belong to the plan, not to events |
-| `shared` | Whether the plan has a share link; the link itself is never returned |
+| `shareUrl` | The plan's share link: anyone holding it can view and edit this one plan in a browser without signing in. Treat it as a credential |
 
 ### Trip input
 
@@ -173,7 +173,7 @@ Required scope: `trip.write`. Body: trip input. Response (201): the new trip.
 
 ### GET /api/trips/{tripId}
 
-Required scope: `trip.read`. Response (200): the trip.
+Required scope: `trip.read`. Response (200): the trip, including its `shareUrl` for [viewing it](#viewing-a-plan).
 
 ### PUT /api/trips/{tripId}
 
@@ -240,6 +240,16 @@ Required scope: `trip.delete`. Deletes the attachment. Response (200): `{"trip":
 
 Required scope: `trip.read`. Query: `lang` (`en` or `zh`, default `en`) and `tz` (an IANA time zone such as `Europe/London`, for the export time). Response (200): `application/pdf` bytes with a `content-disposition` file name. Save the body to a file; do not print it. Plans whose PDF would exceed 4 MB return 413.
 
+## Viewing a plan
+
+To check how a plan looks, for example after changing it, open its `shareUrl` in a browser or browser tool and take a screenshot. No sign-in is needed. The page shows the plan's details, every day with its events and status colours, the attachments, and a calendar view.
+
+- Use the link only to look. The page is editable for anyone holding the link, so do not click or type in it; make changes through this API instead.
+- Use a normal browser. Link-preview bots (WhatsApp, Slack, Telegram and similar user agents) get an empty page with only the title.
+- Each look counts toward the plan's daily share-link allowance (5,000 requests a day per plan); API calls do not.
+- The link does not expire and cannot be turned off. Show it only to the user who asked; never put it in public places, logs, commits or third-party services.
+- For a file instead of a page, use [GET /api/trips/{tripId}/pdf](#get-api-trips-tripid-pdf).
+
 ## Errors
 
 | Status | Meaning/action |
@@ -257,4 +267,4 @@ Gateway denials look like `{"message":"Unauthorized"}`, `{"message":"Forbidden"}
 
 ## Website-only routes
 
-The website at https://plan.dliu.com keeps its own sign-in (`/auth/*`, session cookie) and share links (`/plan/<id>?token=...`, `x-plan-token`). Creating, stopping or resolving share links (`POST`/`DELETE /api/trips/{tripId}/share`, `GET /api/shared/{token}`) is website-only and has no managed equivalent.
+The website at https://plan.dliu.com keeps its own sign-in (`/auth/*`, session cookie) and share links (`/plan/<id>?token=...`, `x-plan-token`). Resolving old `/s/<token>` links (`GET /api/shared/{token}`) is website-only and has no managed equivalent.

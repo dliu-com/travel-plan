@@ -30,10 +30,20 @@ test('getSharedTrip re-checks the token on the item', async () => {
   expect(client.sent[1]).toMatchObject({ name: 'GetCommand', input: { ConsistentRead: true } });
 });
 
-test('shareTrip keeps an existing token', async () => {
+test('ensureShareLink keeps an existing token and is not recorded as an edit', async () => {
   const client = fakeClient([{ Attributes: { id: 'x' } }]);
-  await createStore({ client, table: 'Trips', now }).shareTrip('kyoto-abcdefghij', 'Dewei');
-  expect(client.sent[0].input.UpdateExpression).toContain('if_not_exists(shareToken');
+  await createStore({ client, table: 'Trips', now }).ensureShareLink('20261000');
+  const { input } = client.sent[0];
+  expect(input.UpdateExpression).toBe('SET shareToken = if_not_exists(shareToken, :t)');
+  expect(input.ConditionExpression).toBe('attribute_exists(id)');
+  expect(input.ExpressionAttributeValues[':t']).toMatch(/^[A-Za-z0-9_-]{24}$/);
+});
+
+test('every new plan is created with its share link', async () => {
+  const client = fakeClient([{ Items: [] }, {}]);
+  const item = await createStore({ client, table: 'Trips', now }).createTrip({ title: 'Kyoto' }, 'Dewei');
+  expect(item.shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+  expect(client.sent.find((c) => c.name === 'PutCommand').input.Item.shareToken).toBe(item.shareToken);
 });
 
 test('updateEvent sets fields individually so createdAt survives', async () => {

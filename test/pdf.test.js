@@ -93,21 +93,19 @@ describe('/api/trips/<id>/pdf', () => {
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false })).statusCode).toBe(401);
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: 'nope' })).statusCode).toBe(403);
 
-    const { shareToken } = (await call('POST', `/api/trips/${trip.id}/share`)).json;
+    const { shareToken } = trip;
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(200);
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: 'wrong' })).statusCode).toBe(403);
 
     const other = (await call('POST', '/api/trips', { body: { title: 'Other', startDate: '2026-12-01' } })).json;
     expect((await exportPdf('GET', `/api/trips/${other.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(403);
 
-    await call('DELETE', `/api/trips/${trip.id}/share`);
-    expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(403);
   });
 
   test('share-link guests have a daily PDF allowance; members do not', async () => {
     const { store, call, exportPdf } = setup();
     const trip = await kyoto(call);
-    const { shareToken } = (await call('POST', `/api/trips/${trip.id}/share`)).json;
+    const { shareToken } = trip;
     expect((await exportPdf('GET', `/api/trips/${trip.id}/pdf`, { signedIn: false, token: shareToken })).statusCode).toBe(200);
     const usage = store.quotas.get(`${trip.id}#2026-10-01`);
     expect(usage).toMatchObject({ requests: 1, pdfs: 1 });

@@ -38,23 +38,16 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
       quotas.set(key, row);
       return true;
     },
-    async shareTrip(id, user) {
+    async ensureShareLink(id) {
       const trip = need(id);
       trip.shareToken = trip.shareToken || newShareToken();
-      trip.updatedBy = user;
-      return clone(trip);
-    },
-    async unshareTrip(id, user) {
-      const trip = need(id);
-      delete trip.shareToken;
-      trip.updatedBy = user;
       return clone(trip);
     },
     async createTrip(fields, user) {
       const at = now();
       const id = nextTripId(trips.keys(), at);
       if (!id) throw new TooLarge('Too many trips this month');
-      const item = { id, ...fields, events: {}, files: {}, createdAt: at, updatedAt: at, updatedBy: user };
+      const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), createdAt: at, updatedAt: at, updatedBy: user };
       trips.set(item.id, item);
       return clone(item);
     },

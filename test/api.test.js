@@ -67,7 +67,6 @@ describe('private trips', () => {
       ['POST', '/api/trips', { title: 'x' }],
       ['PUT', `/api/trips/${trip.id}`, { title: 'x' }],
       ['DELETE', `/api/trips/${trip.id}`],
-      ['POST', `/api/trips/${trip.id}/share`],
       ['POST', `/api/trips/${trip.id}/events`, { title: 'x' }],
     ]) {
       const res = await call(method, path, { body, signedIn: false });
@@ -86,10 +85,12 @@ describe('private trips', () => {
   test('create, list, edit and delete a trip', async () => {
     const { call } = setup();
     const trip = await createTrip(call, { intro: 'Leaves' });
-    expect(trip).toMatchObject({ id: '20261000', title: 'Kyoto', events: [], files: [], shareToken: '', updatedBy: 'Dewei' });
+    expect(trip).toMatchObject({ id: '20261000', title: 'Kyoto', events: [], files: [], updatedBy: 'Dewei' });
+    expect(trip.shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
 
     const list = await call('GET', '/api/trips');
-    expect(list.json.trips).toEqual([expect.objectContaining({ id: trip.id, excerpt: 'Leaves', shared: false })]);
+    expect(list.json.trips).toEqual([expect.objectContaining({ id: trip.id, excerpt: 'Leaves' })]);
+    expect(list.json.trips[0]).not.toHaveProperty('shareToken');
 
     const updated = await call('PUT', `/api/trips/${trip.id}`, { body: { title: 'Kyoto & Osaka' } });
     expect(updated.json.title).toBe('Kyoto & Osaka');
@@ -132,15 +133,14 @@ describe('share links', () => {
   async function sharedTrip(call) {
     const trip = await createTrip(call);
     await call('POST', `/api/trips/${trip.id}/events`, { body: { title: 'Inari' } });
-    const shared = await call('POST', `/api/trips/${trip.id}/share`);
-    return { trip, token: shared.json.shareToken };
+    return { trip, token: trip.shareToken };
   }
 
-  test('anyone with the link can view and edit that trip, until sharing stops', async () => {
+  test('every trip has a link; anyone with it can view and edit that trip', async () => {
     const { call } = setup();
     const { trip, token } = await sharedTrip(call);
     expect(token).toMatch(/^[A-Za-z0-9_-]{24}$/);
-    expect((await call('POST', `/api/trips/${trip.id}/share`)).json.shareToken).toBe(token);
+    expect((await call('GET', `/api/trips/${trip.id}`)).json.shareToken).toBe(token);
 
     const guest = { signedIn: false, token };
     const view = await call('GET', `/api/trips/${trip.id}`, guest);
@@ -156,12 +156,32 @@ describe('share links', () => {
     expect((await call('PUT', `/api/trips/${trip.id}/events/${added.json.eventId}`, { ...guest, body: { title: 'Nara deer' } })).statusCode).toBe(200);
     expect((await call('DELETE', `/api/trips/${trip.id}/events/${added.json.eventId}`, guest)).statusCode).toBe(200);
 
-    await call('DELETE', `/api/trips/${trip.id}/share`);
-    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(403);
-    expect((await call('PUT', `/api/trips/${trip.id}`, { ...guest, body: { title: 'x' } })).statusCode).toBe(403);
+    // Links are not created or turned off separately: the old share routes are gone.
+    expect((await call('POST', `/api/trips/${trip.id}/share`)).statusCode).toBe(405);
+    expect((await call('DELETE', `/api/trips/${trip.id}/share`)).statusCode).toBe(405);
+    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(200);
+  });
 
-    const again = await call('POST', `/api/trips/${trip.id}/share`);
-    expect(again.json.shareToken).not.toBe(token);
+  test('plans made before every plan had a link get one when a member opens them', async () => {
+    const { call, store } = setup();
+    const listed = await createTrip(call);
+    const opened = await createTrip(call, { title: 'Lisbon' });
+    for (const id of [listed.id, opened.id]) {
+      delete store.trips.get(id).shareToken;
+      store.trips.get(id).updatedBy = 'Earlier editor';
+    }
+    // A guest can never open a plan that has no link.
+    expect((await call('GET', `/api/trips/${opened.id}`, { signedIn: false, token: listed.shareToken })).statusCode).toBe(403);
+    const view = await call('GET', `/api/trips/${opened.id}`);
+    expect(view.json.shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(view.json.updatedBy).toBe('Earlier editor');
+    delete store.trips.get(opened.id).shareToken;
+    await call('GET', '/api/trips');
+    expect(store.trips.get(listed.id).shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(store.trips.get(opened.id).shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(store.trips.get(listed.id).updatedBy).toBe('Earlier editor');
+    // Opening it again keeps the same link.
+    expect((await call('GET', `/api/trips/${opened.id}`)).json.shareToken).toBe(store.trips.get(opened.id).shareToken);
   });
 
   test('the link only opens its own trip and cannot manage trips', async () => {
@@ -174,8 +194,6 @@ describe('share links', () => {
     expect((await call('GET', '/api/trips', guest)).statusCode).toBe(401);
     expect((await call('POST', '/api/trips', { ...guest, body: { title: 'x' } })).statusCode).toBe(401);
     expect((await call('DELETE', `/api/trips/${trip.id}`, guest)).statusCode).toBe(403);
-    expect((await call('POST', `/api/trips/${trip.id}/share`, guest)).statusCode).toBe(403);
-    expect((await call('DELETE', `/api/trips/${trip.id}/share`, guest)).statusCode).toBe(403);
     // Writes with a token still have to come from the site.
     expect((await call('PUT', `/api/trips/${trip.id}`, { ...guest, origin: 'https://evil.example', body: { title: 'x' } })).statusCode).toBe(403);
     expect((await call('GET', `/api/trips/${trip.id}`)).json.title).toBe('Kyoto');
@@ -187,8 +205,8 @@ describe('share links', () => {
     for (const bad of ['A'.repeat(24), token.slice(1), `${token}x`, 'short']) {
       expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token: bad })).statusCode).toBe(403);
     }
-    const unshared = await createTrip(call);
-    expect((await call('GET', `/api/trips/${unshared.id}`, { signedIn: false, token })).statusCode).toBe(403);
+    const other = await createTrip(call);
+    expect((await call('GET', `/api/trips/${other.id}`, { signedIn: false, token })).statusCode).toBe(403);
   });
 
   test('guessed tokens are checked against the share index without reading any trip', async () => {
@@ -269,7 +287,7 @@ describe('files', () => {
   test('share-link guests can attach and open files on their trip only', async () => {
     const { call, files } = setup();
     const trip = await createTrip(call);
-    const token = (await call('POST', `/api/trips/${trip.id}/share`)).json.shareToken;
+    const token = trip.shareToken;
     const { fileId, done } = await upload(call, files, trip.id, { signedIn: false, token, name: 'map.png', type: 'image/png', body: 'png' });
     expect(done.json.trip.files[0]).toMatchObject({ name: 'map.png', type: 'image/png' });
     expect((await call('GET', `/api/trips/${trip.id}/files/${fileId}?token=${token}`, { signedIn: false })).statusCode).toBe(302);
@@ -280,7 +298,7 @@ describe('files', () => {
   test('guests have daily upload and download allowances; every trip has a storage cap', async () => {
     const { call, files, store } = setup();
     const trip = await createTrip(call);
-    const token = (await call('POST', `/api/trips/${trip.id}/share`)).json.shareToken;
+    const token = trip.shareToken;
     const guest = { signedIn: false, token };
     const key = `${trip.id}#2026-10-01`;
     const start = (size, options = guest) => call('POST', `/api/trips/${trip.id}/files`, { ...options, body: { name: 'big.mp4', size, type: 'video/mp4' } });

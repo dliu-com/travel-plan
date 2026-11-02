@@ -106,25 +106,14 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
       }
     },
 
-    async shareTrip(id, user) {
+    // Gives a plan made before every plan had a share link its link. Not an edit, so updatedAt/By stay as they are.
+    async ensureShareLink(id) {
       const result = await write(new lib.UpdateCommand({
         TableName: table,
         Key: { id },
         ConditionExpression: 'attribute_exists(id)',
-        UpdateExpression: 'SET shareToken = if_not_exists(shareToken, :t), updatedBy = :by',
-        ExpressionAttributeValues: { ':t': newShareToken(), ':by': user },
-        ReturnValues: 'ALL_NEW',
-      }));
-      return result.Attributes;
-    },
-
-    async unshareTrip(id, user) {
-      const result = await write(new lib.UpdateCommand({
-        TableName: table,
-        Key: { id },
-        ConditionExpression: 'attribute_exists(id)',
-        UpdateExpression: 'REMOVE shareToken SET updatedBy = :by',
-        ExpressionAttributeValues: { ':by': user },
+        UpdateExpression: 'SET shareToken = if_not_exists(shareToken, :t)',
+        ExpressionAttributeValues: { ':t': newShareToken() },
         ReturnValues: 'ALL_NEW',
       }));
       return result.Attributes;
@@ -147,7 +136,8 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
         const at = now();
         const id = nextTripId(await this.tripIds(), at);
         if (!id) throw new TooLarge('Too many travel plans this month');
-        const item = { id, ...fields, events: {}, files: {}, createdAt: at, updatedAt: at, updatedBy: user };
+        // Every plan has a share link from the start.
+        const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), createdAt: at, updatedAt: at, updatedBy: user };
         try {
           await send(new lib.PutCommand({ TableName: table, Item: item, ConditionExpression: 'attribute_not_exists(id)' }));
           return item;

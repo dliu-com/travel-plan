@@ -142,7 +142,6 @@
       status && el('span', { class: 'when', text: status }),
       trip.destination && el('span', { text: `📍 ${trip.destination}` }),
       trip.travellers && trip.travellers.length > 0 && el('span', { text: `👥 ${trip.travellers.join(t('、', ', '))}` }),
-      trip.shared && el('span', { class: 'badge', text: t('已分享', 'Shared') }),
     ]);
   }
 
@@ -826,22 +825,6 @@
     }
   }
 
-  async function setShare(method) {
-    state.trip = await api(method, `/api/trips/${state.trip.id}/share`);
-  }
-
-  function shareAction(action, message) {
-    return async () => {
-      try {
-        await action();
-        rerender();
-        setStatus(message);
-      } catch (error) {
-        setStatus(error.message, true);
-      }
-    };
-  }
-
   async function copyText(text) {
     if (navigator.clipboard) {
       try {
@@ -931,35 +914,11 @@
     return el('div', { class: 'share-panel' }, [shareButtons(trip), note]);
   }
 
+  // Every plan has a share link, so there is nothing to create or turn off.
   function shareButtons(trip) {
-    const shareButton = (onclick) => el('button', { type: 'button', class: 'dl-button dl-button-primary dl-button-small', text: t('分享', 'Share'), title: LINK_HINT(), onclick });
-    if (!trip.shareToken) {
-      const create = async () => {
-        await setShare('POST');
-        rerender();
-      };
-      return el('div', { class: 'share row' }, [
-        shareButton(async () => {
-          try {
-            await create();
-            await shareLink(state.trip);
-          } catch (error) {
-            setStatus(error.message, true);
-          }
-        }),
-        el('button', {
-          type: 'button',
-          class: 'dl-button dl-button-small',
-          text: t('创建链接', 'Create link'),
-          title: LINK_HINT(),
-          onclick: shareAction(() => setShare('POST'), t('链接已创建。', 'Link created.')),
-        }),
-        pdfButton(trip),
-      ]);
-    }
     const copyLabel = t('复制链接', 'Copy link');
     return el('div', { class: 'share row' }, [
-      shareButton(() => shareLink(trip)),
+      el('button', { type: 'button', class: 'dl-button dl-button-primary dl-button-small', text: t('分享', 'Share'), title: LINK_HINT(), onclick: () => shareLink(trip) }),
       el('button', {
         type: 'button',
         class: 'dl-button dl-button-small',
@@ -972,13 +931,6 @@
           button.textContent = copied ? t('已复制 ✓', 'Copied ✓') : copyLabel;
           setTimeout(() => { button.textContent = copyLabel; }, 2500);
         },
-      }),
-      el('button', {
-        type: 'button',
-        class: 'dl-button dl-button-small dl-button-danger',
-        text: t('停止分享', 'Stop sharing'),
-        onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
-          && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
       }),
       pdfButton(trip),
     ]);

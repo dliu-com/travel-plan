@@ -165,11 +165,12 @@ describe('serialisation', () => {
     expect(toApiTrip({ ...item, files: undefined }).files).toEqual([]);
   });
 
-  test('summaries carry a short excerpt and the shared flag', () => {
+  test('summaries carry a short excerpt and never the share token', () => {
     const summary = toSummary(item);
     expect(summary.excerpt.length).toBeLessThanOrEqual(280);
     expect(summary.excerpt.endsWith('…')).toBe(true);
-    expect(summary.shared).toBe(true);
+    expect(summary).not.toHaveProperty('shareToken');
+    expect(summary).not.toHaveProperty('shared');
     expect(summary).not.toHaveProperty('events');
   });
 });

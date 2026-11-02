@@ -19,10 +19,11 @@ const SECURITY_HEADERS = {
 const MAX_BODY_BYTES = 64 * 1024;
 const DOWNLOAD_SECONDS = 5 * 60;
 
-// Managed API callers never see a trip's share-link credential, only whether it is shared.
+// Managed API callers get the plan's share link as a ready-to-open address (the website's view of the plan),
+// not the bare token.
 function managedTrip(trip) {
   const { shareToken, ...rest } = trip;
-  return { ...rest, shared: Boolean(shareToken) };
+  return { ...rest, shareUrl: shareToken ? `${process.env.SITE_URL}/plan/${trip.id}?token=${shareToken}` : null };
 }
 
 function json(statusCode, body, cookies) {
@@ -128,13 +129,19 @@ function createHandler(deps = {}) {
     if (parts.length === 1) {
       membersOnly();
       if (method === 'GET') {
-        const trips = (await store.listTrips()).map(toSummary).sort(compareSummaries);
+        const items = await store.listTrips();
+        // Every plan has a share link; plans made before that get theirs here.
+        await Promise.all(items.filter((item) => !item.shareToken).map((item) => store.ensureShareLink(item.id)));
+        const trips = items.map(toSummary).sort(compareSummaries);
         return json(200, { trips });
       }
       if (method === 'POST') return json(201, view(await store.createTrip(parseTrip(readBody(event)), user)));
     }
     if (parts.length === 2) {
-      if (method === 'GET') return json(200, view(await getTrip(tripId)));
+      if (method === 'GET') {
+        const item = await getTrip(tripId);
+        return json(200, view(member && !item.shareToken ? await store.ensureShareLink(tripId) : item));
+      }
       if (method === 'PUT') {
         const fields = parseTrip(readBody(event));
         await guestUses({ changes: 1 });
@@ -146,11 +153,6 @@ function createHandler(deps = {}) {
         await files.removeTrip(tripId);
         return json(200, { deleted: tripId });
       }
-    }
-    if (sub === 'share' && parts.length === 3) {
-      membersOnly();
-      if (method === 'POST') return json(200, view(await store.shareTrip(tripId, user)));
-      if (method === 'DELETE') return json(200, view(await store.unshareTrip(tripId, user)));
     }
     if (sub === 'events') {
       if (parts.length === 3 && method === 'POST') {

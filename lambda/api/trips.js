@@ -214,7 +214,6 @@ function toSummary(item) {
     endDate: item.endDate || '',
     travellers: item.travellers || [],
     excerpt: intro.length > 280 ? `${intro.slice(0, 277).trimEnd()}…` : intro,
-    shared: Boolean(item.shareToken),
     updatedAt: item.updatedAt,
   };
 }

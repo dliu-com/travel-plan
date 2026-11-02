@@ -321,33 +321,45 @@ describe('managed API', () => {
     expect(deleted.json.trip.files).toEqual([]);
   });
 
-  test('never returns a share token, only whether the plan is shared', async () => {
+  test('reading a plan returns its share link as a ready-to-open address, never the bare token field', async () => {
     const { managed, website } = setup();
     const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
-    const { shareToken } = (await website('POST', `/api/trips/${trip.id}/share`)).json;
+    const { shareToken } = trip;
     expect(shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
-    const responses = [
-      await managed('GET', `/api/trips/${trip.id}`),
-      await managed('GET', '/api/trips'),
-      await managed('PUT', `/api/trips/${trip.id}`, { body: { title: 'Kyoto 2' } }),
-      await managed('POST', `/api/trips/${trip.id}/events`, { body: { title: 'Temple' } }),
-    ];
-    for (const res of responses) {
-      expect(res.statusCode).toBeLessThan(300);
-      expect(res.body).not.toContain(shareToken);
-      expect(res.body).not.toContain('shareToken');
+    const shareUrl = `${SITE_URL}/plan/${trip.id}?token=${shareToken}`;
+    const read = await managed('GET', `/api/trips/${trip.id}`);
+    expect(read.statusCode).toBe(200);
+    expect(read.json.shareUrl).toBe(shareUrl);
+    expect(read.json).not.toHaveProperty('shareToken');
+    expect(read.json).not.toHaveProperty('shared');
+    // Plans returned by writes carry it too; summaries in the list do not.
+    expect((await managed('PUT', `/api/trips/${trip.id}`, { body: { title: 'Kyoto 2' } })).json.shareUrl).toBe(shareUrl);
+    expect((await managed('POST', `/api/trips/${trip.id}/events`, { body: { title: 'Temple' } })).json.trip.shareUrl).toBe(shareUrl);
+    const list = await managed('GET', '/api/trips');
+    expect(list.body).not.toContain(shareToken);
+    expect(list.body).not.toContain('shareToken');
+    // Every gate still applies: no scope or no role, no link.
+    for (const options of [{ scopes: ['trip.write'] }, { claims: { ...goodClaims(), roles: '[]' } }, { jwt: false }]) {
+      const denied = await managed('GET', `/api/trips/${trip.id}`, options);
+      expect(denied.statusCode).toBeGreaterThanOrEqual(401);
+      expect(denied.body).not.toContain(shareToken);
     }
-    expect(responses[0].json.shared).toBe(true);
-    expect(responses[1].json.trips[0].shared).toBe(true);
-    // The website still sees (and can use) its token.
-    expect((await website('GET', `/api/trips/${trip.id}`)).json.shareToken).toBe(shareToken);
+    // The link opens the plan on the website without signing in.
     expect((await website('GET', `/api/trips/${trip.id}`, { signedIn: false, token: shareToken })).statusCode).toBe(200);
+  });
+
+  test('a plan made before every plan had a link gets one when the API reads it', async () => {
+    const { managed, website, store } = setup();
+    const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
+    delete store.trips.get(trip.id).shareToken;
+    const read = await managed('GET', `/api/trips/${trip.id}`);
+    expect(read.json.shareUrl).toBe(`${SITE_URL}/plan/${trip.id}?token=${store.trips.get(trip.id).shareToken}`);
   });
 
   test('share links, sign-in and unpublished routes are not reachable through the gateway', async () => {
     const { managed, website } = setup();
     const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
-    const { shareToken } = (await website('POST', `/api/trips/${trip.id}/share`)).json;
+    const { shareToken } = trip;
     for (const [method, url] of [
       ['POST', `/api/trips/${trip.id}/share`],
       ['DELETE', `/api/trips/${trip.id}/share`],
@@ -369,7 +381,7 @@ describe('managed API', () => {
   test('no website cookie, share token or forged header stands in for the Microsoft token', async () => {
     const { managed, website, session } = setup();
     const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
-    const { shareToken } = (await website('POST', `/api/trips/${trip.id}/share`)).json;
+    const { shareToken } = trip;
     const cookies = [`${auth.SESSION_COOKIE}=${session}`];
     for (const options of [
       { jwt: false, cookies },
@@ -439,8 +451,8 @@ describe('website sign-in is unchanged', () => {
     expect((await website('GET', '/api/me')).json).toEqual({ signedIn: true, user: 'member@example.com', name: 'Dewei' });
     expect((await website('GET', '/api/trips', { signedIn: false })).statusCode).toBe(401);
     const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
-    expect(trip.shareToken).toBe('');
-    expect(trip.shared).toBeUndefined();
+    expect(trip.shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(trip).not.toHaveProperty('shareUrl');
   });
 
   test('a bearer token or forged authorizer claims on the website are ignored', async () => {
