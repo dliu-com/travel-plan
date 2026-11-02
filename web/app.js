@@ -65,7 +65,7 @@
 
   function setStatus(text, isError) {
     statusEl.textContent = text || '';
-    statusEl.className = isError ? 'error' : '';
+    statusEl.className = isError ? 'dl-error' : '';
   }
 
   async function sha256Hex(text) {
@@ -166,9 +166,16 @@
 
   function renderAccount() {
     const account = document.getElementById('account');
-    account.replaceChildren(state.me.signedIn
-      ? el('span', {}, [`${state.me.name || state.me.user} · `, el('a', { href: '/auth/logout', text: t('退出登录', 'Sign out') })])
-      : el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') }));
+    // Sits in the header's dl-nav, between Docs and the language switch.
+    account.replaceChildren(...(state.me.signedIn
+      ? [el('span', { class: 'dl-account', text: state.me.name || state.me.user }), el('a', { class: 'dl-button', href: '/auth/logout', text: t('退出登录', 'Sign out') })]
+      : [el('a', { class: 'dl-button dl-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') })]));
+  }
+
+  // narrow: lists and trips; wide: the calendar; docs: /about and /security.
+  function setLayout(kind) {
+    main.classList.toggle('dl-narrow', kind === 'narrow');
+    main.classList.toggle('dl-docs-main', kind === 'docs');
   }
 
   function show(...nodes) {
@@ -188,10 +195,10 @@
   }
 
   function signInCard(message) {
-    return el('section', { class: 'signin' }, [
+    return el('section', { class: 'signin dl-card' }, [
       el('h1', { text: t('我们的行程', 'Our travel plans') }),
       el('p', { text: message }),
-      el('a', { class: 'ms-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}` }, [
+      el('a', { class: 'dl-ms-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}` }, [
         microsoftLogo(),
         el('span', { text: t('使用 Microsoft 登录', 'Sign in with Microsoft') }),
       ]),
@@ -231,14 +238,14 @@
 
   function form(title, inputs, layout, { submitLabel, onSave, onCancel, extra }) {
     const error = el('p', { class: 'form-error', hidden: true });
-    const save = el('button', { class: 'primary', type: 'submit', text: submitLabel });
+    const save = el('button', { class: 'dl-button dl-button-primary', type: 'submit', text: submitLabel });
     const node = el('form', { class: 'panel' }, [
       el('h2', { text: title }),
       ...layout,
       error,
       el('div', { class: 'form-actions' }, [
         save,
-        el('button', { type: 'button', text: t('取消', 'Cancel'), onclick: onCancel }),
+        el('button', { type: 'button', class: 'dl-button', text: t('取消', 'Cancel'), onclick: onCancel }),
         el('span', { class: 'spacer' }),
         extra,
       ]),
@@ -437,7 +444,7 @@
       hidden: true,
       onchange: (e) => { uploadFiles(e.target.files); e.target.value = ''; },
     });
-    return el('span', { class: 'attach' }, [input, el('button', { type: 'button', class: 'link', text, onclick: () => input.click() })]);
+    return el('span', { class: 'attach' }, [input, el('button', { type: 'button', class: 'dl-button dl-button-link', text, onclick: () => input.click() })]);
   }
 
   // Drop files on the trip's file section to attach them.
@@ -548,8 +555,8 @@
           ]),
         ]),
         editable && el('div', { class: 'actions' }, [
-          el('button', { class: 'event-action', type: 'button', text: t('✎ 编辑', '✎ Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
-          el('button', { class: 'event-action danger', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
+          el('button', { class: 'dl-button dl-button-small event-action', type: 'button', text: t('✎ 编辑', '✎ Edit'), onclick: () => { state.editing = event.id; rerender(); } }),
+          el('button', { class: 'dl-button dl-button-small dl-button-danger event-action', type: 'button', text: t('删除', 'Delete'), onclick: () => deleteEvent(event) }),
           statusSelect(event.status, {
             class: 'quick-status',
             'aria-label': t('状态', 'Status'),
@@ -646,7 +653,7 @@
     for (const event of trip.events) if (event.status) counts[event.status] += 1;
     const chips = STATUSES.filter((s) => counts[s]).map((s) => el('button', {
       type: 'button',
-      class: 'chip',
+      class: 'dl-button dl-button-small chip',
       'data-status': s,
       // Instant tooltip (CSS) explaining the status; the native title was slow and easy to miss.
       'data-tip': `${statusHint(s)}\n${view.filter === s ? t('点击显示全部', 'Click to show all') : t('点击只看这些', 'Click to show only these')}`,
@@ -657,7 +664,7 @@
     return el('div', { class: 'viewbar' }, [
       chips.length > 0 && el('div', { class: 'chips' }, [
         ...chips,
-        view.filter && el('button', { type: 'button', class: 'link', text: t('显示全部', 'Show all'), onclick: () => { view.filter = ''; rerender(); } }),
+        view.filter && el('button', { type: 'button', class: 'dl-button dl-button-link', text: t('显示全部', 'Show all'), onclick: () => { view.filter = ''; rerender(); } }),
       ]),
     ]);
   }
@@ -685,7 +692,7 @@
             el('span', { class: 'date', text: sub }),
             el('span', { class: 'dots', 'aria-hidden': 'true' }, allEvents.map((e) => el('span', { class: 'dot', 'data-status': e.status || 'none' }))),
             editable && el('button', {
-              class: 'add-event',
+              class: 'dl-button dl-button-small add-event',
               type: 'button',
               text: t('+ 添加安排', '+ Add event'),
               title: t(`在 ${title} 添加安排`, `Add an event to ${title}`),
@@ -707,7 +714,7 @@
       nodes.push(editable
         ? el('div', { class: 'empty' }, [
           el('p', { text: t('还没有安排——添加第一个吧。', 'No events yet — add the first one.') }),
-          el('button', { type: 'button', class: 'add-event', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
+          el('button', { type: 'button', class: 'dl-button add-event', text: t('+ 添加安排', '+ Add event'), onclick: () => openNewEvent(trip.startDate || '') }),
         ])
         : el('p', { class: 'empty', text: t('暂无安排。', 'Nothing planned yet.') }));
     }
@@ -756,7 +763,7 @@
           el('small', { text: fmt(date, { weekday: 'short' }) }),
           el('strong', { text: fmt(date, { day: 'numeric', month: 'short' }) }),
         ]),
-        el('button', { type: 'button', class: 'calendar-add', text: '+', title: t('添加安排', 'Add event'), 'aria-label': t(`在 ${date} 添加安排`, `Add event on ${date}`), onclick: () => openNewEvent(date) }),
+        el('button', { type: 'button', class: 'dl-button dl-button-small calendar-add', text: '+', title: t('添加安排', 'Add event'), 'aria-label': t(`在 ${date} 添加安排`, `Add event on ${date}`), onclick: () => openNewEvent(date) }),
       ])),
     ]);
     const untimed = el('div', { class: 'calendar-untimed' }, [
@@ -793,9 +800,9 @@
     requestAnimationFrame(() => { [scroll.scrollLeft, scroll.scrollTop] = view.calendarScroll ?? [0, 8 * HOUR]; });
     const change = (date) => { view.calendarStart = date; view.calendarScroll = null; rerender(); };
     const nav = el('div', { class: 'calendar-nav' }, [
-      el('button', { type: 'button', text: t('← 前 7 天', '← Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
+      el('button', { type: 'button', class: 'dl-button', text: t('← 前 7 天', '← Previous 7 days'), disabled: start <= first, onclick: () => change(addDays(start, -7) < first ? first : addDays(start, -7)) }),
       el('strong', { text: `${fmt(start, { year: 'numeric', month: 'short', day: 'numeric' })} – ${fmt(dates.at(-1), { month: 'short', day: 'numeric' })}` }),
-      el('button', { type: 'button', text: t('后 7 天 →', 'Next 7 days →'), disabled: dates.at(-1) >= last, onclick: () => change(addDays(start, 7)) }),
+      el('button', { type: 'button', class: 'dl-button', text: t('后 7 天 →', 'Next 7 days →'), disabled: dates.at(-1) >= last, onclick: () => change(addDays(start, 7)) }),
     ]);
     const adding = typeof state.editing === 'string' && state.editing.startsWith('new:');
     const detailEvent = trip.events.find((e) => e.id === (state.editing || view.selectedEvent));
@@ -909,7 +916,7 @@
 
   const pdfButton = (trip) => el('button', {
     type: 'button',
-    class: 'small pdf',
+    class: 'dl-button dl-button-small pdf',
     text: t('下载 PDF', 'Download PDF'),
     onclick: (e) => downloadPdf(trip, e.currentTarget),
   });
@@ -925,7 +932,7 @@
   }
 
   function shareButtons(trip) {
-    const shareButton = (onclick) => el('button', { type: 'button', class: 'primary small', text: t('分享', 'Share'), title: LINK_HINT(), onclick });
+    const shareButton = (onclick) => el('button', { type: 'button', class: 'dl-button dl-button-primary dl-button-small', text: t('分享', 'Share'), title: LINK_HINT(), onclick });
     if (!trip.shareToken) {
       const create = async () => {
         await setShare('POST');
@@ -942,7 +949,7 @@
         }),
         el('button', {
           type: 'button',
-          class: 'small',
+          class: 'dl-button dl-button-small',
           text: t('创建链接', 'Create link'),
           title: LINK_HINT(),
           onclick: shareAction(() => setShare('POST'), t('链接已创建。', 'Link created.')),
@@ -955,7 +962,7 @@
       shareButton(() => shareLink(trip)),
       el('button', {
         type: 'button',
-        class: 'small',
+        class: 'dl-button dl-button-small',
         text: copyLabel,
         title: LINK_HINT(),
         onclick: async (e) => {
@@ -968,7 +975,7 @@
       }),
       el('button', {
         type: 'button',
-        class: 'small danger',
+        class: 'dl-button dl-button-small dl-button-danger',
         text: t('停止分享', 'Stop sharing'),
         onclick: () => confirm(t('停止分享？链接将立即失效。', 'Stop sharing? The link will stop working immediately.'))
           && shareAction(() => setShare('DELETE'), t('已停止分享。', 'Sharing stopped.'))(),
@@ -992,10 +999,10 @@
   function inlineEditor(key, inputs, { multiline } = {}) {
     const trip = state.trip;
     const error = el('p', { class: 'form-error', hidden: true });
-    const save = el('button', { class: 'primary', type: 'submit', text: t('保存', 'Save') });
+    const save = el('button', { class: 'dl-button dl-button-primary', type: 'submit', text: t('保存', 'Save') });
     const node = el('form', { class: `inline-edit${multiline ? ' multiline' : ''}` }, [
       el('div', { class: 'inline-inputs' }, inputs),
-      el('div', { class: 'inline-actions' }, [save, el('button', { type: 'button', text: t('取消', 'Cancel'), onclick: closeForm })]),
+      el('div', { class: 'inline-actions' }, [save, el('button', { type: 'button', class: 'dl-button', text: t('取消', 'Cancel'), onclick: closeForm })]),
       error,
     ]);
     node.addEventListener('submit', async (event) => {
@@ -1080,7 +1087,7 @@
 
   function renderTrip() {
     const trip = state.trip;
-    main.classList.toggle('calendar-wide', view.mode === 'calendar');
+    setLayout(view.mode === 'calendar' ? 'wide' : 'narrow');
     const guest = isGuest();
     document.title = `${trip.title} · ${brand()}`;
     show(el('article', { class: 'post' }, [
@@ -1091,17 +1098,17 @@
         el('a', { href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('成员登录', 'Members sign in') }),
       ]),
       tripFiles(trip, true),
-      el('div', { class: 'view-switch', role: 'group', 'aria-label': t('视图', 'View') }, ['agenda', 'calendar'].map(mode => el('button', { type: 'button', 'aria-pressed': String(view.mode === mode), text: mode === 'agenda' ? t('议程', 'Agenda') : t('日历', 'Calendar'), onclick: () => { view.mode = mode; view.calendarScroll = null; prefs.set('view', mode); rerender(); } }))),
+      el('div', { class: 'dl-segmented view-switch', role: 'group', 'aria-label': t('视图', 'View') }, ['agenda', 'calendar'].map(mode => el('button', { type: 'button', 'aria-pressed': String(view.mode === mode), text: mode === 'agenda' ? t('议程', 'Agenda') : t('日历', 'Calendar'), onclick: () => { view.mode = mode; view.calendarScroll = null; prefs.set('view', mode); rerender(); } }))),
       ...(view.mode === 'calendar' ? calendarBody(trip) : postBody(trip, { editable: true })),
       !guest && el('div', { class: 'danger-zone' }, [
-        el('button', { type: 'button', class: 'danger', text: t('删除行程', 'Delete travel plan'), onclick: () => deleteTrip(trip) }),
+        el('button', { type: 'button', class: 'dl-button dl-button-danger', text: t('删除行程', 'Delete travel plan'), onclick: () => deleteTrip(trip) }),
       ]),
     ]));
   }
 
   // ---------- index ----------
   async function renderIndex() {
-    main.classList.remove('calendar-wide');
+    setLayout('narrow');
     if (!state.me.signedIn) {
       show(signInCard(state.me.configured === false
         ? t('尚未配置登录。', 'Sign-in is not configured yet.')
@@ -1110,7 +1117,7 @@
     }
     const { trips } = await api('GET', '/api/trips');
     const formSlot = el('div');
-    const newButton = el('button', { class: 'primary', text: t('+ 新行程', '+ New travel plan') });
+    const newButton = el('button', { type: 'button', class: 'dl-button dl-button-primary', text: t('+ 新行程', '+ New travel plan') });
     newButton.addEventListener('click', () => {
       newButton.hidden = true;
       formSlot.replaceChildren(tripForm({}, {
@@ -1143,7 +1150,7 @@
   // /about and /security are public; the account line still shows who is signed in.
   function renderInfo(page) {
     state.trip = null;
-    show(page === 'about' ? window.PlanInfo.about(t) : window.PlanInfo.security(t));
+    show(...(page === 'about' ? window.PlanInfo.about(t) : window.PlanInfo.security(t)));
     document.title = `${page === 'about' ? t('关于', 'About') : t('安全', 'Security')} · ${brand()}`;
     api('GET', '/api/me').then((me) => { state.me = me; renderAccount(); }).catch(() => {});
   }
@@ -1152,7 +1159,7 @@
     const path = location.pathname;
     const info = path.match(/^\/(about|security)\/?$/);
     markNav(info && 'about');
-    main.classList.toggle('wide', Boolean(info));
+    setLayout(info ? 'docs' : 'narrow');
     if (info) {
       renderInfo(info[1]);
       return;
@@ -1208,8 +1215,8 @@
   window.addEventListener('afterprint', () => { if (state.trip) rerender(); });
 
   // ---------- language switch ----------
-  const languageToggle = document.querySelector('.language-toggle');
-  const languages = document.getElementById('site-languages');
+  const languageToggle = document.querySelector('.dl-language-toggle');
+  const languages = document.getElementById('dl-languages');
   const setLanguagesOpen = (open) => {
     languages.classList.toggle('is-open', open);
     languageToggle.setAttribute('aria-expanded', String(open));
@@ -1224,9 +1231,9 @@
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
     document.querySelector('[data-nav="about"]').textContent = t('关于', 'About');
     document.querySelector('[data-nav="docs"]').textContent = t('文档', 'Docs');
-    document.querySelector('.brand').textContent = brand();
+    document.querySelector('[data-footer="about"]').textContent = t('关于', 'About');
+    document.querySelector('.dl-brand').textContent = brand();
     document.title = state.trip ? `${state.trip.title} · ${brand()}` : brand();
-    languageToggle.setAttribute('aria-label', t('语言', 'Language'));
     for (const button of languages.querySelectorAll('[data-language]')) button.setAttribute('aria-pressed', String(button.dataset.language === language));
   }
   languages.addEventListener('click', (event) => {

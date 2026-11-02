@@ -256,10 +256,11 @@ export class TravelPlanStack extends Stack {
     const headers = new cloudfront.ResponseHeadersPolicy(this, 'SiteHeaders', {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          // Images and uploads go straight to the attachments bucket.
+          // Images and uploads go straight to the attachments bucket. The shared dliu.com look
+          // (dl.css, dl-docs.css and the DL icon) comes from files.dliu.com/dliu.com/ only.
           contentSecurityPolicy: Fn.join('', [
-            "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; ",
-            'img-src \'self\' data: blob: https://files.dliu.com https://', filesBucket.bucketRegionalDomainName, '; ',
+            "default-src 'self'; script-src 'self'; style-src 'self' https://files.dliu.com/dliu.com/ui/; object-src 'none'; ",
+            'img-src \'self\' data: blob: https://files.dliu.com/dliu.com/ https://', filesBucket.bucketRegionalDomainName, '; ',
             'connect-src \'self\' https://', filesBucket.bucketRegionalDomainName, '; ',
             "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
           ]),
@@ -362,7 +363,7 @@ export class TravelPlanStack extends Stack {
 
     const apiDocs = fs.readFileSync(path.join(ROOT, 'web', API_DOCS), 'utf8')
       .split(API_URL_MARKER).join(managedApiUrl ?? '(not enabled in this deployment)');
-    // Scripts, styles, the icon and the Markdown docs are public and the same for everyone, and every
+    // Scripts, styles and the Markdown docs are public and the same for everyone, and every
     // deploy invalidates the whole distribution, so the edge keeps them for a day. Each deployment
     // excludes the other's files, so neither prunes them.
     const siteAssets = new s3deploy.BucketDeployment(this, 'SiteContent', {

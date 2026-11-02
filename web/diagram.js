@@ -142,14 +142,19 @@ window.PlanDiagram = (() => {
 
   function more(summary, ...content) {
     const details = el('details', 'dg-more');
-    details.append(el('summary', '', summary), ...content);
+    const body = el('div');
+    body.append(...content);
+    details.append(el('summary', '', summary), body);
     return details;
   }
 
-  // rows: arrays of cells; a cell is text or { text, tone } for a coloured pill.
+  // The shared dl-docs result colours.
+  const TONES = { pass: 'status', fixed: 'status', low: 'risk-low', medium: 'risk-medium' };
+
+  // rows: arrays of cells; a cell is text or { text, tone } for a coloured result.
   function table(head, rows, className = '') {
-    const wrap = el('div', 'info-table-wrap');
-    const tableEl = el('table', `info-table${className ? ` ${className}` : ''}`);
+    const wrap = el('div', 'table-wrap');
+    const tableEl = el('table', className);
     const thead = el('thead');
     const headRow = el('tr');
     for (const cell of head) headRow.append(el('th', '', cell));
@@ -160,7 +165,7 @@ window.PlanDiagram = (() => {
       row.forEach((cell, index) => {
         const td = el(index === 0 ? 'th' : 'td');
         if (index === 0) td.scope = 'row';
-        if (cell && typeof cell === 'object') td.append(el('span', `pill pill-${cell.tone}`, cell.text));
+        if (cell && typeof cell === 'object') td.append(el('span', TONES[cell.tone], cell.text));
         else td.textContent = cell;
         tr.append(td);
       });

@@ -476,8 +476,9 @@ describe('API docs', () => {
   test('render safely as HTML-free nodes', () => {
     const { render } = loadRenderer();
     const root = render(docs);
-    expect(root.querySelectorAll('h2').length).toBe(1);
-    expect(root.querySelectorAll('h3').length).toBeGreaterThan(5);
+    // The page's <h1> is the document title; its sections are h2 and below.
+    expect(root.querySelectorAll('h1').length).toBe(0);
+    expect(root.querySelectorAll('h2').length).toBeGreaterThan(5);
     expect(root.querySelectorAll('table').length).toBeGreaterThan(2);
     expect(root.querySelectorAll('pre').length).toBeGreaterThan(2);
     const evil = render('Hello <img src=x onerror=alert(1)> [x](javascript:alert(1)) `code`');

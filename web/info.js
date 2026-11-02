@@ -17,7 +17,7 @@ window.PlanInfo = (() => {
     if (external) a.rel = 'noopener noreferrer';
     return a;
   }
-  function list(items, className = 'info-points') {
+  function list(items, className = '') {
     const ul = el('ul', className);
     for (const item of items) ul.append(el('li', '', item));
     return ul;
@@ -28,8 +28,8 @@ window.PlanInfo = (() => {
     return node;
   }
   function tabs(t, current) {
-    const nav = el('nav', 'info-tabs');
-    nav.setAttribute('aria-label', t('关于本站', 'About this site'));
+    const nav = el('nav', 'dl-tabs');
+    nav.setAttribute('aria-label', t('文档栏目', 'Docs sections'));
     for (const [path, label] of [['/about', t('关于', 'About')], ['/security', t('安全', 'Security')], ['/docs/api', 'API']]) {
       const a = link(path, label);
       if (path === current) a.setAttribute('aria-current', 'page');
@@ -53,11 +53,10 @@ window.PlanInfo = (() => {
   // ---------------------------------------------------------------- About
   function about(t) {
     const { stats, tiers, flow, table, more, callout } = D();
-    const page = el('article', 'info-page');
+    const page = el('article', 'dl-docs');
     page.append(
       el('h1', '', t('关于 DL 旅行计划', 'About DL Travel Plan')),
-      tabs(t, '/about'),
-      el('p', 'info-lead', t(
+      el('p', 'lead', t(
         'DL 旅行计划是一个私人行程规划网站：按天安排行程、标注确认状态、附上预订单和照片，再通过链接和同行的朋友一起编辑。网站完全运行在 AWS 无服务器服务上，空闲时不占用任何服务器。',
         'DL Travel Plan is a private travel planner: lay out each day, mark what is confirmed, attach bookings and photos, and share a link so travel companions can edit too. It runs entirely on AWS serverless services, so nothing is running when nobody is using it.',
       )),
@@ -180,7 +179,7 @@ window.PlanInfo = (() => {
       t('测试：Jest 覆盖 API、PDF 导出、存储、验证、S3 签名和 CDK 堆栈；每次部署前自动运行。', 'Tests: Jest covers the API, PDF export, storage, validation, S3 signing and the CDK stack, and runs before every deploy.'),
       t('流量：CloudFront 标准日志（含 Cookie）写入 TrafficMonitor 的 raw/plan/。', 'Traffic: CloudFront standard logs (with cookies) go to TrafficMonitor under raw/plan/.'),
     ])));
-    return page;
+    return [tabs(t, '/about'), page];
   }
 
   // ---------------------------------------------------------------- Security
@@ -190,10 +189,9 @@ window.PlanInfo = (() => {
     const FIXED = { text: t('✓ 已修复', '✓ Fixed'), tone: 'fixed' };
     const LOW = { text: t('低', 'Low'), tone: 'low' };
     const MEDIUM = { text: t('中', 'Medium'), tone: 'medium' };
-    const page = el('article', 'info-page');
+    const page = el('article', 'dl-docs');
     page.append(
       el('h1', '', t('安全', 'Security')),
-      tabs(t, '/security'),
       callout('shield', t(
         `${REVIEWED.zh}完成威胁建模，并对线上 plan.dliu.com 进行了渗透测试（使用一个临时测试行程，测试后已删除）。发现的问题已修复并重新测试。`,
         `Threat-modelled and penetration-tested against the live plan.dliu.com on ${REVIEWED.en}, using a throwaway travel plan that was deleted afterwards. The issues found were fixed and re-tested.`,
@@ -298,7 +296,7 @@ window.PlanInfo = (() => {
     ])));
 
     page.append(more(t('防护细节', 'Control details'), list([
-      'Content-Security-Policy: default-src \'self\'; script-src \'self\'; style-src \'self\'; object-src \'none\'; base-uri \'none\'; frame-ancestors \'none\'; form-action \'self\'',
+      'Content-Security-Policy: default-src \'self\'; script-src \'self\'; style-src \'self\' https://files.dliu.com/dliu.com/ui/; img-src \'self\' data: blob: https://files.dliu.com/dliu.com/ and the attachments bucket; object-src \'none\'; base-uri \'none\'; frame-ancestors \'none\'; form-action \'self\'',
       'Strict-Transport-Security: max-age=31536000 · X-Content-Type-Options: nosniff · X-Frame-Options: DENY · Referrer-Policy: no-referrer',
       'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()',
       t('会话 Cookie：__Host-plan_session，HMAC-SHA256，30 天，HttpOnly、Secure、SameSite=Lax；密钥由客户端密钥派生', 'Session cookie: __Host-plan_session, HMAC-SHA256, 30 days, HttpOnly, Secure, SameSite=Lax; key derived from the client secret'),
@@ -309,7 +307,7 @@ window.PlanInfo = (() => {
       t('PDF 导出：保留并发 5，只能读本表和 /travel-plan/ 参数，不能访问附件桶；只接受 GET；用户文字以纯文本排版，链接只保留 http(s)；PDF 不缓存', 'PDF export: reserved concurrency of 5; can only read this table and the /travel-plan/ parameters, not the files bucket; GET only; user text is laid out as plain text and only http(s) links are kept; PDFs are never cached'),
     ])));
 
-    const refs = el('p', 'info-links');
+    const refs = el('p', 'source');
     refs.append(
       t('参考：', 'References: '),
       link('https://owasp.org/www-project-top-ten/', 'OWASP Top 10', true), ' · ',
@@ -318,7 +316,7 @@ window.PlanInfo = (() => {
       link('https://owasp.org/www-community/Threat_Modeling', t('威胁建模', 'Threat modelling'), true),
     );
     page.append(refs);
-    return page;
+    return [tabs(t, '/security'), page];
   }
 
   return { about, security };

@@ -113,7 +113,7 @@ test('link-preview bots get the title without any image', () => {
   expect(card.body).not.toMatch(/<img|og:image|rel="icon"/);
   expect(visit('/plan/20261000', 'facebookexternalhit/1.1 Facebot Twitterbot/1.0').statusCode).toBe(200);
   expect(visit('/plan/20261000', 'Mozilla/5.0 (Macintosh) Chrome/130').uri).toBe('/index.html');
-  expect(visit('/icon.png', 'WhatsApp/2.23.20.0 A').uri).toBe('/icon.png');
+  expect(visit('/app.js', 'WhatsApp/2.23.20.0 A').uri).toBe('/app.js');
 });
 
 test('the api cannot use up the shared account concurrency', () => {
@@ -155,6 +155,10 @@ test('pages are not indexed and only load our own scripts', () => {
   expect(csp).toContain("script-src 'self';");
   expect(csp).toContain("object-src 'none'");
   expect(csp).not.toContain('unsafe-inline');
+  // Only the shared dliu.com stylesheets and DL icon, not the rest of files.dliu.com.
+  expect(csp).toContain("style-src 'self' https://files.dliu.com/dliu.com/ui/;");
+  expect(csp).toContain("img-src 'self' data: blob: https://files.dliu.com/dliu.com/ https://");
+  expect(csp).not.toMatch(/https:\/\/files\.dliu\.com[ ;]/);
 });
 
 test('attachments live in a private bucket that only accepts uploads from the site', () => {

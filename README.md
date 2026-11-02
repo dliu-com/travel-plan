@@ -35,7 +35,9 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js
 
 Note: CloudFront access logs record full URLs, so share tokens in `?token=` appear in the TrafficMonitor logs. The app itself sends the token in a header.
 
-Hardening: strict CSP (`script-src 'self'; style-src 'self'`, no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API and PDF Lambdas capped at 20 and 5 concurrent runs so a flood can't run up costs. Details are on `/security`.
+Hardening: strict CSP (`script-src 'self'`; styles only from the site and `https://files.dliu.com/dliu.com/ui/`; images also from `https://files.dliu.com/dliu.com/` for the DL icon; no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API and PDF Lambdas capped at 20 and 5 concurrent runs so a flood can't run up costs. Details are on `/security`.
+
+Look: the site uses the shared dliu.com look (spec: <https://files.dliu.com/dliu.com/README.md>). Both page shells (`web/index.html`, `web/docs-api.html`) load `ui/v1/dl.css`, then `ui/v1/dl-docs.css`, then `/style.css`. They use the shared `dl-header` with the DL icon as logo and favicon, the `dl-nav` menu (About, Docs, Sign in / out, the `dl-language` switch) and the `dl-footer`. Buttons, sign-in, tabs, tables and status pills are the shared `dl-*` classes. `/about`, `/security` and `/docs/api` use `dl-docs`, `dl-tabs` and the shared diagram kit. `web/style.css` keeps only what belongs to the app (trip list, plan post, events and their status colours, forms, files, calendar, print), all on the shared `--dl-*` colours. The site is light-theme only and there is no shared JavaScript. `test/shared-ui.test.js` guards this.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 
@@ -56,7 +58,7 @@ CloudFront serves the site from every edge location (`PriceClass_All`) over HTTP
 
 | What | Cache-Control | At the edge |
 | --- | --- | --- |
-| Scripts, styles, icon, `/docs/api.md` (site bucket) | `public, max-age=300, s-maxage=86400, stale-while-revalidate=86400` | up to 1 day |
+| Scripts, styles, `/docs/api.md` (site bucket) | `public, max-age=300, s-maxage=86400, stale-while-revalidate=86400` | up to 1 day |
 | HTML shells: `/`, `/plan/…`, `/s/…`, `/about`, `/security`, `/docs/api` | `no-cache` | revalidated on every load |
 | `/api/*`, `/auth/*`, PDF export | `no-store`, CachingDisabled | never |
 | Attachments | private bucket, reached by short-lived presigned S3 links | not behind CloudFront |

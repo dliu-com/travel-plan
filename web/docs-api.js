@@ -27,6 +27,7 @@
 
   function render(markdown) {
     const root = el('div');
+    let titled = false;
     const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
     const block = (line) => /^(#{1,3} |```|\||- |\d+\. )/.test(line);
     const cells = (line) => line.replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim());
@@ -43,8 +44,9 @@
       } else if (/^#{1,3} /.test(line)) {
         const [, hashes, text] = /^(#{1,3}) (.+)$/.exec(line);
         const id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        // The page already has its title; the document's own headings move down a level.
-        root.append(inline(el(`h${Math.min(hashes.length + 1, 4)}`, { id }), text));
+        // The page's <h1> already carries the document's title.
+        if (hashes.length > 1 || titled) root.append(inline(el(`h${Math.max(hashes.length, 2)}`, { id }), text));
+        titled = true;
         i += 1;
       } else if (line.startsWith('|')) {
         const headers = cells(line);
@@ -57,10 +59,10 @@
           if (row.length !== headers.length) throw new Error('Invalid table row in API reference');
           body.append(el('tr', {}, ...row.map((text) => inline(el('td'), text))));
         }
-        root.append(el('div', { class: 'info-table-wrap' }, el('table', { class: 'info-table' }, el('thead', {}, header), body)));
+        root.append(el('div', { class: 'table-wrap' }, el('table', {}, el('thead', {}, header), body)));
       } else if (/^(- |\d+\. )/.test(line)) {
         const ordered = /^\d+\. /.test(line);
-        const list = el(ordered ? 'ol' : 'ul', { class: 'info-points' });
+        const list = el(ordered ? 'ol' : 'ul');
         const marker = ordered ? /^\d+\. / : /^- /;
         while (i < lines.length && marker.test(lines[i])) list.append(inline(el('li'), lines[i++].replace(marker, '')));
         root.append(list);
@@ -81,7 +83,7 @@
       root.replaceChildren(render(await response.text()));
       if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
     } catch (error) {
-      root.replaceChildren(el('p', { class: 'error', role: 'alert' },
+      root.replaceChildren(el('p', { class: 'dl-error', role: 'alert' },
         `Could not load the API reference: ${error.message}. `, el('a', { href: '/docs/api.md' }, 'Read the Markdown directly')));
     }
   }

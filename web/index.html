@@ -2,40 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <title>DL Travel Plan</title>
-  <!-- Small on purpose: link previews (WhatsApp etc.) show it as a thumbnail, not a full-width image. -->
-  <link rel="icon" type="image/png" sizes="64x64" href="/icon.png">
+  <link rel="icon" type="image/png" href="https://files.dliu.com/dliu.com/favicon.png">
   <meta property="og:site_name" content="DL Travel Plan">
+  <link rel="stylesheet" href="https://files.dliu.com/dliu.com/ui/v1/dl.css">
+  <!-- /about and /security are docs pages rendered by this same shell. -->
+  <link rel="stylesheet" href="https://files.dliu.com/dliu.com/ui/v1/dl-docs.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/diagram.js" defer></script>
   <script src="/info.js" defer></script>
   <script src="/calendar.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
-<body>
-  <header class="site">
-    <div class="brand-row">
-      <a class="logo" href="https://dliu.com" aria-label="dliu.com"><img src="https://files.dliu.com/dliu.com/favicon.png" width="36" height="36" alt="DL"></a>
-      <a class="brand" href="/">DL Travel Plan</a>
-    </div>
-    <div class="header-end">
-      <nav class="site-nav" aria-label="Site">
-        <a href="/about" data-nav="about">About</a>
-        <a href="/docs/api" data-nav="docs">Docs</a>
-      </nav>
-      <div id="account"></div>
-      <button type="button" class="language-toggle" aria-controls="site-languages" aria-expanded="false" aria-label="Language / 语言">文/A</button>
-      <div id="site-languages" class="languages" role="group" aria-label="Language / 语言">
-        <button type="button" data-language="zh" lang="zh">中文</button>
-        <button type="button" data-language="en" lang="en">English</button>
-      </div>
-    </div>
+<body class="dl-page">
+  <header class="dl-header">
+    <a class="dl-logo" href="https://dliu.com" aria-label="dliu.com"><img src="https://files.dliu.com/dliu.com/favicon.png" alt="DL" width="32" height="32"></a>
+    <a class="dl-brand" href="/">DL Travel Plan</a>
+    <nav class="dl-nav" aria-label="Site">
+      <a class="dl-nav-link" href="/about" data-nav="about">About</a>
+      <a class="dl-button" href="/docs/api" data-nav="docs">Docs</a>
+      <span id="account" class="account"></span>
+      <div class="dl-language"><button type="button" class="dl-button dl-language-toggle" aria-controls="dl-languages" aria-expanded="false" aria-label="Language / 语言">文/A</button><div id="dl-languages" class="dl-languages" role="group" aria-label="Language / 语言"><button type="button" data-language="zh" lang="zh-CN" aria-pressed="true">中文</button><button type="button" data-language="en" lang="en" aria-pressed="false">English</button></div></div>
+    </nav>
   </header>
 
-  <main id="main">
+  <main class="dl-main dl-narrow" id="main">
     <p id="status" role="status"></p>
   </main>
+
+  <footer class="dl-footer"><a href="https://dliu.com">dliu.com</a> · <a href="/about" data-footer="about">About</a></footer>
 </body>
 </html>
