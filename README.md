@@ -50,6 +50,27 @@ make outputs
 
 Traffic logging needs the TrafficMonitor stack export `TrafficVisitorFunctionArn`; this stack only adds the visitor-ID function and turns on cookies in the access logs. The log delivery itself is created by TrafficMonitor, from the `plan` entry in `traffic-monitor/config/sites.json`. Deploy without it using `npx cdk deploy -c trafficLogging=false`.
 
+## Caching and CloudFront
+
+CloudFront serves the site from every edge location (`PriceClass_All`) over HTTP/2 and HTTP/3.
+
+| What | Cache-Control | At the edge |
+| --- | --- | --- |
+| Scripts, styles, icon, `/docs/api.md` (site bucket) | `public, max-age=300, s-maxage=86400, stale-while-revalidate=86400` | up to 1 day |
+| HTML shells: `/`, `/plan/…`, `/s/…`, `/about`, `/security`, `/docs/api` | `no-cache` | revalidated on every load |
+| `/api/*`, `/auth/*`, PDF export | `no-store`, CachingDisabled | never |
+| Attachments | private bucket, reached by short-lived presigned S3 links | not behind CloudFront |
+
+**How changes are cleared:** the site bucket is only written by `make deploy`. Both `BucketDeployment`s (static files and HTML shells) invalidate `/*` after uploading, so a deploy is live everywhere within a minute or two. Browsers may keep a script or stylesheet for up to 5 minutes (then revalidate in the background), so a page might use the previous version once right after a deploy.
+
+**No automatic (S3 event) clearing — decided deliberately.** Automatic invalidation is only worth it for edge-cached objects that can change outside a deploy, and here none can:
+
+- Site bucket: no function, job or person writes to it outside a deploy, and every deploy already invalidates `/*`. If you ever edit a file there by hand, run `aws cloudfront create-invalidation --distribution-id <id> --paths '/<path>'` (or just redeploy).
+- Files bucket (attachments): private and not served by CloudFront, so there is nothing to clear.
+- Trip data lives in DynamoDB and is only read through the uncached API.
+
+This keeps the shared allowance of 1,000 free invalidation paths a month (used by all dliu.com sites) for sites that need it: this one uses two `/*` paths per deploy (one per upload) and nothing otherwise. Revisit the decision if CloudFront ever serves a bucket or prefix that the app or a job writes to.
+
 ## Microsoft 365 / Entra sign-in
 
 At https://entra.microsoft.com:
@@ -64,6 +85,22 @@ At https://entra.microsoft.com:
    ```
 
 Settings are cached for 5 minutes by the Lambda. Until they exist, sign-in shows "not configured".
+
+## Managed API (Microsoft access tokens)
+
+Trusted tools and AI agents can use a separate API Gateway HTTP API with Microsoft-issued access tokens from https://auth.dliu.com (the shared dliu API and its SPA client). Agents need only the token and https://plan.dliu.com/docs/api; the full route table, schemas and errors are there (`web/docs/api.md`, with the execute-api URL filled in at deploy).
+
+- **Routes and scopes** (`lambda/api/routes.json`): 14 routes. Reads need `trip.read`, creates and edits need `trip.write`, and every DELETE (plans, events, attachments) needs `trip.delete`. Share links, `/api/shared/*` and `/auth/*` are not published, and `shareToken` is never returned.
+- **Who**: API Gateway checks the signature, tenant v2 issuer, audience, expiry and route scope. `lambda/api/api-access.js` then requires the trusted gateway, tenant, audience, the approved client (`azp`), `oid`/`sub`, the shared User-only role **dliu API user** (token value `api.access` ; the same role for every dliu.com managed API, and the old `trip.access` is refused) and the exact scope. Mutable claims such as `preferred_username` or email are never used for authorization. Only explicitly assigned users can use the API; other members keep website and share-link access but get no API rights from signing in. An assigned user can read and change every travel plan, like a signed-in member.
+- **Files**: `GET …/files/<fid>` returns `{url, expiresIn, file}` instead of a redirect, so the bearer token is never sent to S3. Uploads PUT straight to the presigned URL, also without the token.
+- **Website**: sign-in, the `@dliu.com` rule, cookies and share links are unchanged. The website's `/api/*` doesn't accept bearer tokens.
+- **Client**: `TRIP_API_URL=<MicrosoftApiUrl> node scripts/api-client.js GET /api/trips` (also `upload`, `download`, `pdf`). It reads the token as the Auth API docs describe and never follows redirects or prints presigned URLs.
+
+To enable it, the shared scopes and role are configured centrally. Then:
+
+1. Store the shared API settings in SSM (eu-west-1): `/travel-plan/api-tenant-id`, `/travel-plan/api-audience` and `/travel-plan/api-client-id`.
+2. Set `"microsoftApi": true` in `cdk.json`, so later default deploys keep the API. (`-c microsoftApi=true` only lasts for one deploy.)
+3. `make deploy`, then `make outputs` shows `MicrosoftApiUrl`.
 
 ## Local preview
 

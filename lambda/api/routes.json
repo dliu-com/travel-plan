@@ -1,0 +1,16 @@
+{
+  "GET /api/me": { "scope": "trip.read" },
+  "GET /api/trips": { "scope": "trip.read" },
+  "POST /api/trips": { "scope": "trip.write" },
+  "GET /api/trips/{tripId}": { "scope": "trip.read" },
+  "PUT /api/trips/{tripId}": { "scope": "trip.write" },
+  "DELETE /api/trips/{tripId}": { "scope": "trip.delete" },
+  "POST /api/trips/{tripId}/events": { "scope": "trip.write" },
+  "PUT /api/trips/{tripId}/events/{eventId}": { "scope": "trip.write" },
+  "DELETE /api/trips/{tripId}/events/{eventId}": { "scope": "trip.delete" },
+  "POST /api/trips/{tripId}/files": { "scope": "trip.write" },
+  "GET /api/trips/{tripId}/files/{fileId}": { "scope": "trip.read" },
+  "PUT /api/trips/{tripId}/files/{fileId}": { "scope": "trip.write" },
+  "DELETE /api/trips/{tripId}/files/{fileId}": { "scope": "trip.delete" },
+  "GET /api/trips/{tripId}/pdf": { "scope": "trip.read", "function": "pdf" }
+}

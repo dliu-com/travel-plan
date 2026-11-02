@@ -2,6 +2,7 @@
 
 // Who may read or change a trip. Shared by the API and the PDF export functions.
 const crypto = require('crypto');
+const apiAccess = require('./api-access');
 const auth = require('./auth');
 const { NotConfigured } = require('./config');
 const { createGuestLimits } = require('./limits');
@@ -43,7 +44,10 @@ function createAccess({ getConfig, store, clock }) {
   // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip,
   // but can't see other trips, delete it or change its link. The token comes in a header (or ?token= for images).
   // Guests also use up a daily allowance for the trip (see limits.js), so a leaked link can't run up the bill.
+  // Managed API requests (Microsoft access tokens through API Gateway) are checked only by their token claims:
+  // never by a cookie, share link or header, and never by the website's sign-in settings.
   async function access(event, tripId) {
+    if (apiAccess.isManaged(event)) return managedAccess(event);
     const session = await optionalSession(event);
     if (session) return { user: session.name || session.user, member: true };
     const token = header(event, 'x-plan-token') || (event.queryStringParameters || {}).token;
@@ -60,4 +64,14 @@ function createAccess({ getConfig, store, clock }) {
   return { access, optionalSession, useGuest };
 }
 
-module.exports = { GUEST, HttpError, createAccess, header, sameToken };
+// Microsoft-token callers are members: like signed-in website members they can read and change every trip
+// (there is no per-trip owner). The gateway route decides which scope is needed.
+function managedAccess(event) {
+  const route = apiAccess.routeFor(event);
+  if (!route) throw new HttpError(404, 'Not found');
+  const result = apiAccess.authorize(event, route.scope);
+  if (result.status) throw new HttpError(result.status, result.error);
+  return { user: result.name, id: result.user, name: result.name, member: true, managed: true, route };
+}
+
+module.exports = { GUEST, HttpError, createAccess, header, managedAccess, sameToken };

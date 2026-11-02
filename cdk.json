@@ -1,1 +1,6 @@
-{ "app": "npx ts-node --prefer-ts-exts bin/travel-plan.ts" }
+{
+  "app": "npx ts-node --prefer-ts-exts bin/travel-plan.ts",
+  "context": {
+    "microsoftApi": true
+  }
+}

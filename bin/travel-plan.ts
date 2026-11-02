@@ -10,6 +10,8 @@ if (region !== 'eu-west-1') throw new Error('TravelPlan must be deployed to eu-w
 const app = new App();
 new TravelPlanStack(app, 'TravelPlan', {
   trafficLogging: app.node.tryGetContext('trafficLogging') !== 'false',
+  // Opt in with "microsoftApi": true in cdk.json or -c microsoftApi=true (see README: Managed API).
+  microsoftApi: [true, 'true'].includes(app.node.tryGetContext('microsoftApi')),
   tags: { service: 'travel-plan' },
   env: { account: process.env.CDK_DEFAULT_ACCOUNT, region },
 });

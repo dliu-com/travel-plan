@@ -23,7 +23,7 @@ const files = createMemoryFiles();
 const handler = createHandler({ store, files, loadConfig: async () => config });
 const pdfHandler = pdf.createHandler({ store, loadConfig: async () => config });
 const WEB = path.join(__dirname, '..', 'web');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.md': 'text/markdown; charset=utf-8' };
 // Local cookies can't use the __Host- prefix over plain http, so rename them on the way in and out.
 const LOCAL_SESSION = 'plan_dev_session';
 
@@ -107,6 +107,12 @@ async function handle(req, res) {
     return res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
   }
   let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/(about|security)\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
+  if (/^\/docs\/api\/?$/.test(url.pathname)) file = '/docs-api.html';
+  // The deploy fills in the managed API's URL (lib/travel-plan-stack.ts); there is no managed API locally.
+  if (url.pathname === '/docs/api.md') {
+    res.writeHead(200, { 'content-type': TYPES['.md'], 'cache-control': 'no-store' });
+    return res.end(fs.readFileSync(path.join(WEB, 'docs/api.md'), 'utf8').split('__TRIP_API_URL__').join('(not enabled in local development)'));
+  }
   file = path.join(WEB, path.normalize(file));
   if (!file.startsWith(WEB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404);

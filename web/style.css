@@ -385,3 +385,12 @@ button.calendar-add:hover { background: var(--accent); color: #fff; }
 .calendar-anytime .calendar-event { margin: .5rem 0; }
 @media (max-width: 600px) { .calendar-nav strong { order: -1; flex-basis: 100%; } }
 @media print { .view-switch, .calendar-nav button, button.calendar-add { display: none !important; } }
+
+/* /docs/api: the rendered API reference */
+.api-doc h2 { font: 600 1.35rem var(--serif); margin: 2.2rem 0 .6rem; }
+.api-doc h3 { font: 600 1.1rem var(--serif); margin: 1.6rem 0 .5rem; }
+.api-doc h4 { font: 600 1rem system-ui, sans-serif; margin: 1.4rem 0 .4rem; }
+.api-doc code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; padding: .05rem .3rem; border-radius: 4px; background: var(--accent-soft); }
+.api-doc pre.code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-x: auto; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); white-space: pre; }
+.api-doc .info-table td code { white-space: nowrap; }
+.api-doc .error { color: var(--danger); }

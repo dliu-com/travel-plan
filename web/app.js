@@ -1223,6 +1223,7 @@
   function applyLanguage() {
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
     document.querySelector('[data-nav="about"]').textContent = t('关于', 'About');
+    document.querySelector('[data-nav="docs"]').textContent = t('文档', 'Docs');
     document.querySelector('.brand').textContent = brand();
     document.title = state.trip ? `${state.trip.title} · ${brand()}` : brand();
     languageToggle.setAttribute('aria-label', t('语言', 'Language'));

@@ -30,7 +30,7 @@ window.PlanInfo = (() => {
   function tabs(t, current) {
     const nav = el('nav', 'info-tabs');
     nav.setAttribute('aria-label', t('关于本站', 'About this site'));
-    for (const [path, label] of [['/about', t('关于', 'About')], ['/security', t('安全', 'Security')]]) {
+    for (const [path, label] of [['/about', t('关于', 'About')], ['/security', t('安全', 'Security')], ['/docs/api', 'API']]) {
       const a = link(path, label);
       if (path === current) a.setAttribute('aria-current', 'page');
       nav.append(a);
@@ -230,6 +230,7 @@ window.PlanInfo = (() => {
       table([t('身份', 'Who'), t('能做什么', 'What they can do')], [
         [t('dliu.com 成员', 'dliu.com members'), t('查看、创建、编辑、删除所有行程；创建或停止分享链接', 'See, create, edit and delete every travel plan; make or stop share links')],
         [t('持分享链接者', 'Share-link holders'), t('查看和编辑该行程的内容、安排和附件；不能删除行程、管理分享或看到其他行程', 'See and edit that travel plan’s details, events and files; cannot delete the travel plan, manage sharing or see other travel plans')],
+        [t('API 工具（Microsoft 访问令牌）', 'API tools (Microsoft access token)'), t('启用托管 API 后：仅限被明确分配共享角色“dliu API user”（api.access）的用户，按令牌的 trip.read / trip.write / trip.delete 权限读取、编辑或删除所有行程；不能管理分享，也看不到分享令牌。其他成员登录网站不会获得 API 权限。见 API 页面', 'When the managed API is enabled: only users explicitly assigned the shared “dliu API user” role (api.access) can read, edit or delete every travel plan according to the token’s trip.read / trip.write / trip.delete permissions; they cannot manage sharing or see share tokens. Other members get no API rights from signing in to the website. See the API page')],
         [t('其他人', 'Everyone else'), t('只能看到登录页、关于页和本页', 'Only the sign-in, About and this page')],
       ]),
     ));
@@ -275,6 +276,7 @@ window.PlanInfo = (() => {
         [t('跨站请求伪造（CSRF）', 'Cross-site request forgery'), LOW, t('SameSite=Lax 会话 Cookie；写请求必须带 plan.dliu.com 的 Origin 和 JSON 类型', 'SameSite=Lax session cookie; writes need the plan.dliu.com Origin and a JSON body')],
         [t('点击劫持', 'Clickjacking'), LOW, 'X-Frame-Options: DENY · frame-ancestors \'none\''],
         [t('窃取或伪造会话', 'Stealing or forging a session'), LOW, t('HMAC-SHA256 签名，HttpOnly、Secure、__Host- 前缀；登录使用 PKCE、state、nonce 并校验 id_token', 'HMAC-SHA256 signature, HttpOnly, Secure, __Host- prefix; sign-in uses PKCE, state and nonce and verifies the id_token')],
+        [t('API 访问令牌泄露', 'An API access token leaks'), MEDIUM, t('Microsoft 签发、约一小时后过期；API Gateway 校验签名、租户、受众和权限，函数再校验客户端、不可变的用户 ID 和明确分配的 api.access 角色（不依据可变的用户名或邮箱授权）；删除需要单独的 trip.delete 权限；不能读到分享令牌', 'Issued by Microsoft and expires after about an hour; API Gateway checks the signature, tenant, audience and permission, then the functions check the client, the immutable user ID and the explicitly assigned api.access role (never a mutable username or email); deleting needs the separate trip.delete permission; share tokens are never returned')],
         [t('非组织账号登录', 'Signing in from outside the organisation'), LOW, t('只信任 dliu.com 租户，且用户名必须以 @dliu.com 结尾', 'Only the dliu.com tenant is trusted, and the username must end in @dliu.com')],
         [t('绕过 CloudFront 直接访问后端', 'Going around CloudFront to the back end'), LOW, t('Lambda 函数 URL 需 IAM 签名，S3 桶阻止所有公开访问，只信任 CloudFront OAC', 'The Lambda URL needs IAM signing and the buckets block all public access; only CloudFront OAC is trusted')],
         [t('刷流量造成费用或拖垮其他网站', 'Floods that run up costs or starve other sites'), MEDIUM, t('并发上限 20；每个行程最多 1 GB 附件；分享链接每天每个行程最多 5000 次请求、1000 次修改、50 次上传（500 MB）、10 GB 下载、50 次 PDF；未确认的上传 1 天后删除；没有 WAF', 'Concurrency capped at 20; at most 1 GB of files per travel plan; per plan per day a share link gets at most 5,000 requests, 1,000 changes, 50 uploads (500 MB), 10 GB of downloads and 50 PDFs; unconfirmed uploads expire after a day; no WAF')],

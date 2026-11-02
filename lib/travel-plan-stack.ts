@@ -1,6 +1,10 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import {
+  aws_apigatewayv2 as apigateway,
+  aws_apigatewayv2_authorizers as authorizers,
+  aws_apigatewayv2_integrations as integrations,
   aws_certificatemanager as acm,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
@@ -12,6 +16,7 @@ import {
   aws_route53_targets as targets,
   aws_s3 as s3,
   aws_s3_deployment as s3deploy,
+  aws_ssm as ssm,
   CfnOutput,
   Duration,
   Fn,
@@ -19,6 +24,7 @@ import {
   Stack,
   StackProps,
 } from 'aws-cdk-lib';
+import apiRoutes from '../lambda/api/routes.json';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -33,6 +39,10 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var uri = request.uri;
   var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
     || uri === '/about' || uri === '/about/' || uri === '/security' || uri === '/security/';
+  if (uri === '/docs/api' || uri === '/docs/api/') {
+    request.uri = '/docs-api.html';
+    return request;
+  }
   var agent = request.headers && request.headers['user-agent'] ? request.headers['user-agent'].value : '';
   if (page && ${PREVIEW_BOTS}.test(agent)) {
     return {
@@ -52,7 +62,19 @@ export interface TravelPlanStackProps extends StackProps {
   subdomain?: string;
   /** Send CloudFront logs to the TrafficMonitor stack (needs its exports). */
   trafficLogging?: boolean;
+  /**
+   * Managed API for Microsoft-issued access tokens (shared dliu API, trip.* scopes) on API Gateway.
+   * Needs the SSM parameters /travel-plan/api-tenant-id, api-audience and api-client-id. Off by default.
+   */
+  microsoftApi?: boolean;
 }
+
+// The agent-readable API docs, with the managed API's URL filled in at deploy time.
+export const API_DOCS = 'docs/api.md';
+// The HTML shells (app and API docs page) are never edge-cached for long; everything else under web/ is.
+export const SITE_PAGES = '*.html';
+export const STATIC_CACHE_CONTROL = ['public', 'max-age=300', 's-maxage=86400', 'stale-while-revalidate=86400'];
+export const API_URL_MARKER = '__TRIP_API_URL__';
 
 export class TravelPlanStack extends Stack {
   constructor(scope: Construct, id: string, props: TravelPlanStackProps = {}) {
@@ -179,6 +201,42 @@ export class TravelPlanStack extends Stack {
     readSecrets(pdfHandler);
     const pdfUrl = pdfHandler.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
 
+    // ---------- Managed API (Microsoft access tokens) ----------
+    // API Gateway checks the token (signature, issuer, audience, expiry, route scope); the functions re-check the
+    // claims (lambda/api/api-access.js). The website, its sign-in cookie and share links don't use this API.
+    let managedApiUrl: string | undefined;
+    if (props.microsoftApi) {
+      const parameter = (name: string) => ssm.StringParameter.valueForStringParameter(this, `${PARAMETER_PREFIX}/api-${name}`);
+      const tenantId = parameter('tenant-id');
+      const audience = parameter('audience');
+      const clientId = parameter('client-id');
+      const httpApi = new apigateway.HttpApi(this, 'MicrosoftApi', {
+        description: 'Travel plan API: Microsoft Entra access tokens, delegated trip.* permissions and assigned users',
+      });
+      const authorizer = new authorizers.HttpJwtAuthorizer('MicrosoftJwt',
+        Fn.join('', ['https://login.microsoftonline.com/', tenantId, '/v2.0']), { jwtAudience: [audience] });
+      const apiIntegration = new integrations.HttpLambdaIntegration('TripApi', apiHandler);
+      const pdfIntegration = new integrations.HttpLambdaIntegration('TripPdf', pdfHandler);
+      for (const [route, permission] of Object.entries(apiRoutes) as [string, { scope: string; function?: string }][]) {
+        const [method, routePath] = route.split(' ');
+        httpApi.addRoutes({
+          path: routePath,
+          methods: [apigateway.HttpMethod[method as 'GET' | 'POST' | 'PUT' | 'DELETE']],
+          integration: permission.function === 'pdf' ? pdfIntegration : apiIntegration,
+          authorizer,
+          authorizationScopes: [permission.scope],
+        });
+      }
+      for (const fn of [apiHandler, pdfHandler]) {
+        fn.addEnvironment('API_GATEWAY_ID', httpApi.apiId);
+        fn.addEnvironment('API_TENANT_ID', tenantId);
+        fn.addEnvironment('API_AUDIENCE', audience);
+        fn.addEnvironment('API_CLIENT_ID', clientId);
+      }
+      managedApiUrl = httpApi.apiEndpoint;
+      new CfnOutput(this, 'MicrosoftApiUrl', { value: httpApi.apiEndpoint });
+    }
+
     // ---------- Website ----------
     const siteBucket = new s3.Bucket(this, 'SiteBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -281,7 +339,9 @@ export class TravelPlanStack extends Stack {
       certificate,
       defaultRootObject: 'index.html',
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      // Most visitors are in Europe and Asia, so serve from every edge location.
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_ALL,
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
     });
     if (trafficLogging) {
       // TrafficMonitor delivers this distribution's access logs (CloudFront standard logging v2).
@@ -300,14 +360,32 @@ export class TravelPlanStack extends Stack {
       });
     }
 
-    new s3deploy.BucketDeployment(this, 'SiteContent', {
-      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'))],
+    const apiDocs = fs.readFileSync(path.join(ROOT, 'web', API_DOCS), 'utf8')
+      .split(API_URL_MARKER).join(managedApiUrl ?? '(not enabled in this deployment)');
+    // Scripts, styles, the icon and the Markdown docs are public and the same for everyone, and every
+    // deploy invalidates the whole distribution, so the edge keeps them for a day. Each deployment
+    // excludes the other's files, so neither prunes them.
+    const siteAssets = new s3deploy.BucketDeployment(this, 'SiteContent', {
+      sources: [
+        s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [API_DOCS] }),
+        s3deploy.Source.data(API_DOCS, apiDocs),
+      ],
       destinationBucket: siteBucket,
+      exclude: [SITE_PAGES],
       distribution,
       distributionPaths: ['/*'],
-      // Browsers revalidate (cheap 304s) so a deploy takes effect on the next load.
-      cacheControl: [s3deploy.CacheControl.noCache()],
+      cacheControl: STATIC_CACHE_CONTROL.map((directive) => s3deploy.CacheControl.fromString(directive)),
     });
+    // The HTML shells stay no-cache: browsers revalidate (cheap 304s) so a deploy takes effect on the next load.
+    new s3deploy.BucketDeployment(this, 'SitePages', {
+      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [API_DOCS] })],
+      destinationBucket: siteBucket,
+      exclude: ['*'],
+      include: [SITE_PAGES],
+      distribution,
+      distributionPaths: ['/*'],
+      cacheControl: [s3deploy.CacheControl.noCache()],
+    }).node.addDependency(siteAssets);
 
     new route53.ARecord(this, 'SiteAliasRecord', {
       recordName: subdomain,

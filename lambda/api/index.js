@@ -1,7 +1,8 @@
 'use strict';
 
+const { isManaged, routeFor } = require('./api-access');
 const auth = require('./auth');
-const { HttpError, createAccess, header } = require('./access');
+const { HttpError, createAccess, header, managedAccess } = require('./access');
 const { loadConfig, NotConfigured } = require('./config');
 const { LimitReached, MAX_TRIP_BYTES, tripBytes } = require('./limits');
 const { createFiles } = require('./s3');
@@ -16,6 +17,13 @@ const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
 };
 const MAX_BODY_BYTES = 64 * 1024;
+const DOWNLOAD_SECONDS = 5 * 60;
+
+// Managed API callers never see a trip's share-link credential, only whether it is shared.
+function managedTrip(trip) {
+  const { shareToken, ...rest } = trip;
+  return { ...rest, shared: Boolean(shareToken) };
+}
 
 function json(statusCode, body, cookies) {
   return {
@@ -75,8 +83,14 @@ function createHandler(deps = {}) {
   }
 
   async function api(method, parts, event) {
+    const managed = isManaged(event);
+    const view = (item) => (managed ? managedTrip(toApiTrip(item)) : toApiTrip(item));
     // /api/me
     if (parts.length === 1 && parts[0] === 'me' && method === 'GET') {
+      if (managed) {
+        const caller = managedAccess(event);
+        return json(200, { signedIn: true, user: caller.id, name: caller.name || '' });
+      }
       try {
         const session = auth.getSession(event, await getConfig(), clock());
         return json(200, session ? { signedIn: true, user: session.user, name: session.name } : { signedIn: false });
@@ -97,7 +111,8 @@ function createHandler(deps = {}) {
     if (sub === 'events' && subId !== undefined && !EVENT_ID.test(subId)) throw new NotFound('Event not found');
     if (sub === 'files' && subId !== undefined && !FILE_ID.test(subId)) throw new NotFound('File not found');
 
-    if (method !== 'GET') requireSameOrigin(event);
+    // Bearer tokens aren't sent automatically by browsers, so the cookie's cross-site check doesn't apply to them.
+    if (method !== 'GET' && !managed) requireSameOrigin(event);
     const { user, member } = await access(event, tripId);
     const membersOnly = () => {
       if (!member) throw new HttpError(403, 'Sign in to do that');
@@ -116,14 +131,14 @@ function createHandler(deps = {}) {
         const trips = (await store.listTrips()).map(toSummary).sort(compareSummaries);
         return json(200, { trips });
       }
-      if (method === 'POST') return json(201, toApiTrip(await store.createTrip(parseTrip(readBody(event)), user)));
+      if (method === 'POST') return json(201, view(await store.createTrip(parseTrip(readBody(event)), user)));
     }
     if (parts.length === 2) {
-      if (method === 'GET') return json(200, toApiTrip(await getTrip(tripId)));
+      if (method === 'GET') return json(200, view(await getTrip(tripId)));
       if (method === 'PUT') {
         const fields = parseTrip(readBody(event));
         await guestUses({ changes: 1 });
-        return json(200, toApiTrip(await store.updateTrip(tripId, fields, user)));
+        return json(200, view(await store.updateTrip(tripId, fields, user)));
       }
       if (method === 'DELETE') {
         membersOnly();
@@ -134,24 +149,24 @@ function createHandler(deps = {}) {
     }
     if (sub === 'share' && parts.length === 3) {
       membersOnly();
-      if (method === 'POST') return json(200, toApiTrip(await store.shareTrip(tripId, user)));
-      if (method === 'DELETE') return json(200, toApiTrip(await store.unshareTrip(tripId, user)));
+      if (method === 'POST') return json(200, view(await store.shareTrip(tripId, user)));
+      if (method === 'DELETE') return json(200, view(await store.unshareTrip(tripId, user)));
     }
     if (sub === 'events') {
       if (parts.length === 3 && method === 'POST') {
         const fields = parseEvent(readBody(event));
         await guestUses({ changes: 1 });
         const { id, trip } = await store.addEvent(tripId, fields, user);
-        return json(201, { eventId: id, trip: toApiTrip(trip) });
+        return json(201, { eventId: id, trip: view(trip) });
       }
       if (parts.length === 4 && method === 'PUT') {
         const fields = parseEvent(readBody(event));
         await guestUses({ changes: 1 });
-        return json(200, { trip: toApiTrip(await store.updateEvent(tripId, subId, fields, user)) });
+        return json(200, { trip: view(await store.updateEvent(tripId, subId, fields, user)) });
       }
       if (parts.length === 4 && method === 'DELETE') {
         await guestUses({ changes: 1 });
-        return json(200, { trip: toApiTrip(await store.deleteEvent(tripId, subId, user)) });
+        return json(200, { trip: view(await store.deleteEvent(tripId, subId, user)) });
       }
     }
     if (sub === 'files') {
@@ -172,7 +187,10 @@ function createHandler(deps = {}) {
         if (!file) throw new NotFound('File not found');
         await guestUses({ downloadBytes: Number(file.size) || 0 });
         const params = event.queryStringParameters || {};
-        return redirect(files.downloadUrl(tripId, subId, file, { download: params.download === '1' }));
+        const url = files.downloadUrl(tripId, subId, file, { download: params.download === '1' });
+        // Managed callers get the link as data, never a redirect, so no client follows it with the bearer token.
+        if (managed) return json(200, { url, expiresIn: DOWNLOAD_SECONDS, file: { id: subId, name: file.name, size: file.size, type: file.type } });
+        return redirect(url);
       }
       if (parts.length === 4 && method === 'PUT') {
         const update = parseFileUpdate(readBody(event));
@@ -180,20 +198,20 @@ function createHandler(deps = {}) {
         // Rename a kept file, or keep a finished upload.
         if ((item.files || {})[subId]) {
           await guestUses({ changes: 1 });
-          return json(200, { trip: toApiTrip(await store.updateFile(tripId, subId, update, user)) });
+          return json(200, { trip: view(await store.updateFile(tripId, subId, update, user)) });
         }
         const uploaded = await files.uploaded(tripId, subId);
         if (!uploaded) throw new NotFound('Upload not found. Try again.');
         const file = parseUpload({ ...update, size: uploaded.size, type: uploaded.type });
         roomFor(item, file.size);
         await files.keep(tripId, subId);
-        return json(201, { trip: toApiTrip(await store.addFile(tripId, subId, file, user)) });
+        return json(201, { trip: view(await store.addFile(tripId, subId, file, user)) });
       }
       if (parts.length === 4 && method === 'DELETE') {
         await guestUses({ changes: 1 });
         const trip = await store.deleteFile(tripId, subId, user);
         await files.remove(tripId, subId);
-        return json(200, { trip: toApiTrip(trip) });
+        return json(200, { trip: view(trip) });
       }
     }
     throw new HttpError(405, 'Method not allowed');
@@ -206,6 +224,13 @@ function createHandler(deps = {}) {
     const siteUrl = process.env.SITE_URL;
 
     try {
+      if (isManaged(event)) {
+        // Only the routes the gateway publishes, on this function (the PDF has its own), with the matching method.
+        const route = routeFor(event);
+        if (!route || route.function || event.requestContext.routeKey.split(' ')[0] !== method || !path.startsWith('/api/')) {
+          return json(404, { error: 'Not found' });
+        }
+      }
       if (path.startsWith('/auth/')) {
         if (method !== 'GET') return json(405, { error: 'Method not allowed' });
         if (path === '/auth/logout') return redirect(auth.safeReturnPath(params.return), auth.logoutCookies());

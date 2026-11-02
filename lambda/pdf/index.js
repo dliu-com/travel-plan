@@ -1,7 +1,9 @@
 'use strict';
 
 // GET /api/trips/<id>/pdf: the travel plan as a PDF download.
-// Same access rules as the API: members, or the plan's share link (x-plan-token header).
+// Same access rules as the API: members, the plan's share link (x-plan-token header), or a Microsoft access token
+// with trip.read through the managed API.
+const { isManaged, routeFor } = require('../api/api-access');
 const { HttpError, createAccess } = require('../api/access');
 const { LimitReached } = require('../api/limits');
 const { loadConfig, NotConfigured } = require('../api/config');
@@ -42,6 +44,8 @@ function createHandler(deps = {}) {
     try {
       const match = PDF_PATH.exec(path);
       if (!match) throw new HttpError(404, 'Not found');
+      // Through the managed API, only the gateway's PDF route reaches this function.
+      if (isManaged(event) && (routeFor(event) || {}).function !== 'pdf') throw new HttpError(404, 'Not found');
       if (method !== 'GET') throw new HttpError(405, 'Method not allowed');
       const id = match[1];
       if (!TRIP_ID.test(id)) throw new HttpError(404, 'Travel plan not found');
