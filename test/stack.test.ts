@@ -113,7 +113,7 @@ test('link-preview bots get the title without any image', () => {
   expect(card.body).not.toMatch(/<img|og:image|rel="icon"/);
   expect(visit('/plan/20261000', 'facebookexternalhit/1.1 Facebot Twitterbot/1.0').statusCode).toBe(200);
   expect(visit('/plan/20261000', 'Mozilla/5.0 (Macintosh) Chrome/130').uri).toBe('/index.html');
-  expect(visit('/app.js', 'WhatsApp/2.23.20.0 A').uri).toBe('/app.js');
+  expect(visit('/icon.png', 'WhatsApp/2.23.20.0 A').uri).toBe('/icon.png');
 });
 
 test('the api cannot use up the shared account concurrency', () => {

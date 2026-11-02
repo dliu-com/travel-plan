@@ -1232,7 +1232,7 @@
     document.querySelector('[data-nav="about"]').textContent = t('关于', 'About');
     document.querySelector('[data-nav="docs"]').textContent = t('文档', 'Docs');
     document.querySelector('[data-footer="about"]').textContent = t('关于', 'About');
-    document.querySelector('.dl-brand').textContent = brand();
+    document.querySelector('.dl-brand').lastChild.nodeValue = brand(); // keep the logo image
     document.title = state.trip ? `${state.trip.title} · ${brand()}` : brand();
     for (const button of languages.querySelectorAll('[data-language]')) button.setAttribute('aria-pressed', String(button.dataset.language === language));
   }
