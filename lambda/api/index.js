@@ -39,6 +39,9 @@ function redirect(location, cookies) {
   return { statusCode: 302, headers: { ...SECURITY_HEADERS, location }, ...(cookies ? { cookies } : {}), body: '' };
 }
 
+// Old /s/<token> links put the share token in the path; keep it out of the logs.
+const logPath = (path) => path.replace(/^\/api\/shared\/[^/]+/, '/api/shared/[token]');
+
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function errorPage(statusCode, message, cookies) {
@@ -255,15 +258,15 @@ function createHandler(deps = {}) {
       if (error instanceof NotFound) return json(404, { error: error.message });
       if (error instanceof TooLarge) return json(413, { error: error.message });
       if (error instanceof NotConfigured) {
-        console.error(JSON.stringify({ message: 'Sign-in not configured', path, error: error.message }));
+        console.error(JSON.stringify({ message: 'Sign-in not configured', path: logPath(path), error: error.message }));
         const text = 'Sign-in is not configured yet. Run "make set-secrets".';
         return path.startsWith('/auth/') ? errorPage(503, text) : json(503, { error: text });
       }
-      console.error(JSON.stringify({ message: 'Request failed', method, path, error: error.message, stack: error.stack }));
+      console.error(JSON.stringify({ message: 'Request failed', method, path: logPath(path), error: error.message, stack: error.stack }));
       if (path.startsWith('/auth/')) return errorPage(500, 'Something went wrong while signing in.');
       return json(500, { error: 'Internal error' });
     }
   };
 }
 
-module.exports = { createHandler, handler: createHandler() };
+module.exports = { createHandler, logPath, handler: createHandler() };

@@ -183,7 +183,9 @@ async function finishLogin(event, config, siteUrl, { fetchImpl = fetch, now = Da
 
   const claims = await verifyIdToken(tokens.id_token, config, transient.nonce, { fetchImpl, now });
   if (!isAllowed(claims, config)) {
-    console.warn(JSON.stringify({ message: 'User domain not allowed', user: claims.preferred_username, oid: claims.oid }));
+    // The domain is enough to see why; the username itself stays out of the logs.
+    const username = String(claims.preferred_username || claims.email || claims.upn || '');
+    console.warn(JSON.stringify({ message: 'User domain not allowed', domain: username.includes('@') ? username.split('@').pop() : '', oid: claims.oid }));
     return { error: `${claims.preferred_username || 'This account'} is not allowed to edit trips.`, status: 403, cookies: [clearAuth] };
   }
 

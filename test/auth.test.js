@@ -141,12 +141,18 @@ describe('login flow', () => {
   test('finishLogin rejects users from another domain', async () => {
     const { transient, payload } = beginLogin();
     const fetchImpl = fakeFetch(() => idToken(claimsFor(payload.nonce, { preferred_username: 'other@example.org', oid: 'x' })));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await auth.finishLogin({
       queryStringParameters: { code: 'c', state: payload.state },
       cookies: [`${auth.AUTH_COOKIE}=${transient}`],
     }, config, SITE, { fetchImpl, now: NOW });
     expect(result.status).toBe(403);
     expect(cookieValue(result.cookies, auth.SESSION_COOKIE)).toBeUndefined();
+    // Logs say which domain was refused, never the username.
+    const logged = warn.mock.calls.map((args) => args.join(' ')).join('\n');
+    warn.mockRestore();
+    expect(logged).toContain('"domain":"example.org"');
+    expect(logged).not.toContain('other@');
   });
 
   test('finishLogin rejects a state mismatch or missing transient cookie', async () => {

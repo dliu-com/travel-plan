@@ -376,3 +376,23 @@ describe('auth routes', () => {
     expect(auth.safeReturnPath(undefined)).toBe('/');
   });
 });
+
+test('share tokens in old /s/ link lookups never reach the error log', async () => {
+  const { store, call } = setup();
+  store.getSharedTrip = async () => { throw new Error('DynamoDB unavailable'); };
+  const token = 'AbCdEfGhIjKlMnOpQrStUvWx';
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const res = await call('GET', `/api/shared/${token}`, { signedIn: false });
+  const logged = error.mock.calls.map((args) => args.join(' ')).join('\n');
+  error.mockRestore();
+  expect(res.statusCode).toBe(500);
+  expect(res.json).toEqual({ error: 'Internal error' });
+  expect(logged).toContain('/api/shared/[token]');
+  expect(logged).not.toContain(token);
+});
+
+test('logPath only redacts the share-link lookup', () => {
+  const { logPath } = require('../lambda/api/index');
+  expect(logPath('/api/shared/AbCdEfGhIjKlMnOpQrStUvWx')).toBe('/api/shared/[token]');
+  expect(logPath('/api/trips/20261000/events')).toBe('/api/trips/20261000/events');
+});
