@@ -106,7 +106,13 @@ async function handle(req, res) {
     res.writeHead(result.statusCode, result.headers);
     return res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
   }
-  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/(about|security)\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
+  const moved = { '/about': '/docs', '/security': '/docs/security' }[url.pathname.replace(/(.)\/$/, '$1')];
+  if (moved) {
+    res.writeHead(301, { location: moved + url.search });
+    res.end();
+    return;
+  }
+  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/docs(\/(cost|security))?\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
   if (/^\/docs\/api\/?$/.test(url.pathname)) file = '/docs-api.html';
   // The deploy fills in the managed API's URL (lib/travel-plan-stack.ts); there is no managed API locally.
   if (url.pathname === '/docs/api.md') {

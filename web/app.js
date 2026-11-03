@@ -171,7 +171,7 @@
       : [el('a', { class: 'dl-button dl-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') })]));
   }
 
-  // narrow: lists and trips; wide: the calendar; docs: /about and /security.
+  // narrow: lists and trips; wide: the calendar; docs: /docs, /docs/cost and /docs/security.
   function setLayout(kind) {
     main.classList.toggle('dl-narrow', kind === 'narrow');
     main.classList.toggle('dl-docs-main', kind === 'docs');
@@ -1099,21 +1099,22 @@
   // Trips created before /plan/<YYYYMMNN> addresses.
   const LEGACY_IDS = { 'spain-ibiza-67mrt9qxtc': '20261000' };
 
-  // /about and /security are public; the account line still shows who is signed in.
+  // The docs pages are public; the account line still shows who is signed in.
+  const DOCS_TITLES = { architecture: ['技术架构', 'Technical architecture'], cost: ['运行成本', 'Cost'], security: ['安全', 'Security'] };
   function renderInfo(page) {
     state.trip = null;
-    show(...(page === 'about' ? window.PlanInfo.about(t) : window.PlanInfo.security(t)));
-    document.title = `${page === 'about' ? t('关于', 'About') : t('安全', 'Security')} · ${brand()}`;
+    show(...window.PlanInfo[page](t));
+    document.title = `${t(...DOCS_TITLES[page])} · ${brand()}`;
     api('GET', '/api/me').then((me) => { state.me = me; renderAccount(); }).catch(() => {});
   }
 
   async function start() {
     const path = location.pathname;
-    const info = path.match(/^\/(about|security)\/?$/);
-    markNav(info && 'about');
+    const info = path.match(/^\/docs(?:\/(cost|security))?\/?$/);
+    markNav(info && 'docs');
     setLayout(info ? 'docs' : 'narrow');
     if (info) {
-      renderInfo(info[1]);
+      renderInfo(info[1] || 'architecture');
       return;
     }
     const legacyShare = path.match(/^\/s\/([A-Za-z0-9_-]{24})\/?$/);
@@ -1181,9 +1182,8 @@
   }
   function applyLanguage() {
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
-    document.querySelector('[data-nav="about"]').textContent = t('关于', 'About');
     document.querySelector('[data-nav="docs"]').textContent = t('文档', 'Docs');
-    document.querySelector('[data-footer="about"]').textContent = t('关于', 'About');
+    document.querySelector('[data-footer="docs"]').textContent = t('文档', 'Docs');
     document.querySelector('.dl-brand').lastChild.nodeValue = brand(); // keep the logo image
     document.title = state.trip ? `${state.trip.title} · ${brand()}` : brand();
     for (const button of languages.querySelectorAll('[data-language]')) button.setAttribute('aria-pressed', String(button.dataset.language === language));

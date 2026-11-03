@@ -52,12 +52,12 @@ test('the app uses the shared language switcher, last in the menu', () => {
 test('docs pages use the shared docs layout and tabs', () => {
   const page = read('web/docs-api.html');
   expect(page).toContain('<main class="dl-main dl-docs-main" id="main">');
-  expect(page).toContain('<nav class="dl-tabs" aria-label="Docs sections">');
+  expect(page).toContain('<nav class="dl-tabs" aria-label="Docs sections" data-label-zh="文档章节" data-label-en="Docs sections">');
   expect(page).toContain('<article class="dl-docs">');
-  // /about and /security are rendered into the app shell with the same pieces.
+  // /docs, /docs/cost and /docs/security are rendered into the app shell with the same pieces.
   const info = read('web/info.js');
   expect(info).toContain("el('nav', 'dl-tabs')");
-  expect(info).toContain("t('文档栏目', 'Docs sections')");
+  expect(info).toContain("t('文档章节', 'Docs sections')");
   expect(info).toContain("el('article', 'dl-docs')");
   expect(read('web/app.js')).toContain("main.classList.toggle('dl-docs-main', kind === 'docs')");
 });

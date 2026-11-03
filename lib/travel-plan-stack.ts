@@ -29,20 +29,38 @@ import apiRoutes from '../lambda/api/routes.json';
 const ROOT = path.join(__dirname, '..');
 
 export const PARAMETER_PREFIX = '/travel-plan';
+/** Managed API stage throttling, requests per second and burst, shared by every caller. */
+export const MANAGED_API_RATE = 10;
+export const MANAGED_API_BURST = 20;
 
 // Serves the single-page app for trip pages (/plan/<id>) and old links (/trips/<id>, /s/<token>).
 // Link-preview bots (WhatsApp, iMessage, Telegram, Slack, Teams…) get a bare page with the
 // title and no images, so chats show a plain link instead of a big icon card.
 export const PREVIEW_BOTS = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|redditbot|Pinterest|vkShare|Viber/i;
+// Docs: /docs (technical architecture), /docs/cost and /docs/security are app-shell pages, /docs/api has its own
+// page. The old /about and /security addresses move there for good (301), keeping any query string.
+export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security' };
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
   var uri = request.uri;
-  var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
-    || uri === '/about' || uri === '/about/' || uri === '/security' || uri === '/security/';
-  if (uri === '/docs/api' || uri === '/docs/api/') {
+  var path = uri.length > 1 ? uri.replace(/\\/$/, '') : uri;
+  var moved = ${JSON.stringify(DOCS_MOVED)};
+  if (moved[path]) {
+    var query = [];
+    var qs = request.querystring || {};
+    for (var key in qs) {
+      var values = qs[key].multiValue || [qs[key]];
+      for (var i = 0; i < values.length; i++) query.push(key + '=' + values[i].value);
+    }
+    return { statusCode: 301, statusDescription: 'Moved Permanently',
+      headers: { location: { value: moved[path] + (query.length ? '?' + query.join('&') : '') }, 'cache-control': { value: 'max-age=86400' } } };
+  }
+  if (path === '/docs/api') {
     request.uri = '/docs-api.html';
     return request;
   }
+  var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
+    || path === '/docs' || path === '/docs/cost' || path === '/docs/security';
   var agent = request.headers && request.headers['user-agent'] ? request.headers['user-agent'].value : '';
   if (page && ${PREVIEW_BOTS}.test(agent)) {
     return {
@@ -56,6 +74,14 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
   if (page && uri !== '/') request.uri = '/index.html';
   return request;
 }`;
+
+// JSON logs without Lambda's START/END/REPORT lines for every call, so a flood of refused requests
+// doesn't also pay for log ingestion. Warnings and errors from the code are still logged.
+const QUIET_LOGS = {
+  loggingFormat: lambda.LoggingFormat.JSON,
+  systemLogLevelV2: lambda.SystemLogLevel.WARN,
+  applicationLogLevelV2: lambda.ApplicationLogLevel.INFO,
+};
 
 export interface TravelPlanStackProps extends StackProps {
   /** Subdomain under the MainDomain export. */
@@ -149,6 +175,7 @@ export class TravelPlanStack extends Stack {
         FILES_BUCKET: filesBucket.bucketName,
         PARAMETER_PREFIX,
       },
+      ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'ApiLogs', {
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: RemovalPolicy.DESTROY,
@@ -191,6 +218,7 @@ export class TravelPlanStack extends Stack {
         LIMITS_TABLE: limitsTable.tableName,
         PARAMETER_PREFIX,
       },
+      ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'PdfLogs', {
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: RemovalPolicy.DESTROY,
@@ -213,6 +241,11 @@ export class TravelPlanStack extends Stack {
       const httpApi = new apigateway.HttpApi(this, 'MicrosoftApi', {
         description: 'Travel plan API: Microsoft Entra access tokens, delegated trip.* permissions and assigned users',
       });
+      // Caps token-bearing traffic (only tokens from the configured tenant pass the authorizer): above this API Gateway
+      // answers 429 before Lambda runs. Requests without a valid token get 401 from the authorizer first and never reach Lambda.
+      (httpApi.defaultStage!.node.defaultChild as apigateway.CfnStage).defaultRouteSettings = {
+        throttlingRateLimit: MANAGED_API_RATE, throttlingBurstLimit: MANAGED_API_BURST,
+      };
       const authorizer = new authorizers.HttpJwtAuthorizer('MicrosoftJwt',
         Fn.join('', ['https://login.microsoftonline.com/', tenantId, '/v2.0']), { jwtAudience: [audience] });
       const apiIntegration = new integrations.HttpLambdaIntegration('TripApi', apiHandler);

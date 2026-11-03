@@ -11,7 +11,8 @@ Private travel plans at **https://plan.dliu.com**, written like a blog: one trav
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js, style.css)
-   │            │  viewer-request: /plan/*, /trips/*, /s/*, /about, /security → /index.html
+   │            │  viewer-request: /plan/*, /trips/*, /s/*, /docs, /docs/cost, /docs/security → /index.html;
+   │            │                  /docs/api → /docs-api.html; /about, /security → 301 /docs, /docs/security
    │            ├─ api/trips/*/pdf ──OAC──▶ Lambda function URL (lambda/pdf, read-only) ──▶ DynamoDB "Trips" (+ "Limits" for guest PDFs)
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken), "Limits"
    │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
@@ -24,7 +25,7 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js
 | --- | --- | --- |
 | `/` | signed in | trip index plus "New trip"; signed-out visitors only see a sign-in card |
 | `/plan/<id>` | signed in | the post with editing, events, files and the share panel |
-| `/about`, `/security` | anyone | how the site works and what it costs; threat model and penetration-test results |
+| `/docs`, `/docs/cost`, `/docs/security`, `/docs/api` | anyone | docs tabs: technical architecture, cost (including the most a flood can cost), security (threat model, findings, live penetration tests, code review) and the API reference. `/about` and `/security` 301 to `/docs` and `/docs/security`, keeping the query |
 | `/plan/<id>?token=<token>` | anyone with the link | the same post, editable, without the share panel or trip deletion |
 | `/api/trips` (GET, POST) | signed in | list and create trips |
 | `/api/trips/<id>` and `/events…` | signed in or that trip's token (`x-plan-token` header or `?token=`) | read and edit the trip and its events |
@@ -35,9 +36,11 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js
 
 Note: CloudFront access logs record full URLs, so share tokens in `?token=` appear in the TrafficMonitor logs. The app itself sends the token in a header.
 
-Hardening: strict CSP (`script-src 'self'`; styles only from the site and `https://files.dliu.com/dliu.com/ui/`; images also from `https://files.dliu.com/dliu.com/` for the footer DL logo; no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API and PDF Lambdas capped at 20 and 5 concurrent runs so a flood can't run up costs. Details are on `/security`.
+Hardening: strict CSP (`script-src 'self'`; styles only from the site and `https://files.dliu.com/dliu.com/ui/`; images also from `https://files.dliu.com/dliu.com/` for the footer DL logo; no inline code), HSTS, `X-Frame-Options: DENY`, `Permissions-Policy` that turns off camera, microphone, location, payment and USB, attachment names stripped of control and bidi characters, and the API and PDF Lambdas capped at 20 and 5 concurrent runs so a flood can't run up costs. The managed API's stage is throttled to 10 requests a second (bursts of 20) for token-bearing callers; requests without a valid token get 401 from the JWT authorizer before the throttle and never reach Lambda. Lambda logs are JSON, warnings and errors only (no per-call platform lines), kept 30 days, and never contain share tokens or usernames. Details are on `/docs/security`.
 
-Look: the site uses the shared dliu.com look (spec: <https://files.dliu.com/dliu.com/README.md>). Both page shells (`web/index.html`, `web/docs-api.html`) load `ui/v1/dl.css`, then `ui/v1/dl-docs.css`, then `/style.css`. They use the shared `dl-header` with the app's own logo (`web/logo.svg`, a white map pin on the DL blue, also the favicon) and name as one `dl-brand` link, the `dl-nav` menu (About, Docs, Sign in / out, the `dl-language` switch) and the `dl-footer`, which starts with the shared DL logo linking to dliu.com. Buttons, sign-in, tabs, tables and status pills are the shared `dl-*` classes. `/about`, `/security` and `/docs/api` use `dl-docs`, `dl-tabs` and the shared diagram kit. `web/style.css` keeps only what belongs to the app (trip list, plan post, events and their status colours, forms, files, calendar, print), all on the shared `--dl-*` colours. The site is light-theme only and there is no shared JavaScript. `test/shared-ui.test.js` guards this.
+Security review: `scripts/pentest.sh` is a read-only, credential-free live test of every route (authn/authz, forged sessions and JWTs, share-token IDOR, injection, CRLF, CSRF/CORS, open redirects, OIDC, direct origin access, cache tricks, hidden files, TLS and headers, a 200-request tokenless burst on the managed API). Run it with `./scripts/pentest.sh`; it prints a Markdown table and exits non-zero if any check fails. The latest results, threat model (STRIDE and denial of wallet) and code review are on `/docs/security` and `/docs/cost`.
+
+Look: the site uses the shared dliu.com look (spec: <https://files.dliu.com/dliu.com/README.md>). Both page shells (`web/index.html`, `web/docs-api.html`) load `ui/v1/dl.css`, then `ui/v1/dl-docs.css`, then `/style.css`. They use the shared `dl-header` with the app's own logo (`web/logo.svg`, a white map pin on the DL blue, also the favicon) and name as one `dl-brand` link, the `dl-nav` menu (Docs, Sign in / out, the `dl-language` switch, on every page including `/docs/api`) and the `dl-footer` (`dliu.com · Docs`), which starts with the shared DL logo linking to dliu.com. Buttons, sign-in, tabs, tables and status pills are the shared `dl-*` classes. The docs (`/docs`, `/docs/cost`, `/docs/security`, `/docs/api`) use `dl-docs` and the same four `dl-tabs` (Technical architecture · Cost · Security · API, in English and Chinese) and the shared diagram kit. `web/style.css` keeps only what belongs to the app (trip list, plan post, events and their status colours, forms, files, calendar, print), all on the shared `--dl-*` colours. The site is light-theme only and there is no shared JavaScript. `test/shared-ui.test.js` guards this.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 
@@ -59,7 +62,7 @@ CloudFront serves the site from every edge location (`PriceClass_All`) over HTTP
 | What | Cache-Control | At the edge |
 | --- | --- | --- |
 | Scripts, styles, icon, `/docs/api.md` (site bucket) | `public, max-age=300, s-maxage=86400, stale-while-revalidate=86400` | up to 1 day |
-| HTML shells: `/`, `/plan/…`, `/s/…`, `/about`, `/security`, `/docs/api` | `no-cache` | revalidated on every load |
+| HTML shells: `/`, `/plan/…`, `/s/…`, `/docs`, `/docs/cost`, `/docs/security`, `/docs/api` | `no-cache` | revalidated on every load |
 | `/api/*`, `/auth/*`, PDF export | `no-store`, CachingDisabled | never |
 | Attachments | private bucket, reached by short-lived presigned S3 links | not behind CloudFront |
 

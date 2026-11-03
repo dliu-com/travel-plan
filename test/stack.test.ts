@@ -1,6 +1,6 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { REWRITE_FUNCTION_CODE, TravelPlanStack } from '../lib/travel-plan-stack';
+import { MANAGED_API_BURST, MANAGED_API_RATE, REWRITE_FUNCTION_CODE, TravelPlanStack } from '../lib/travel-plan-stack';
 
 const env = { account: '123456789012', region: 'eu-west-1' };
 const template = Template.fromStack(new TravelPlanStack(new App(), 'TravelPlan', { env }));
@@ -96,8 +96,11 @@ test('trip and share pages are rewritten to the app shell', () => {
   expect(uri('/plan/20261000')).toBe('/index.html');
   expect(uri('/trips/kyoto-abcdefghij')).toBe('/index.html');
   expect(uri('/s/AAAAAAAAAAAAAAAAAAAAAAAA')).toBe('/index.html');
-  expect(uri('/about')).toBe('/index.html');
-  expect(uri('/security/')).toBe('/index.html');
+  expect(uri('/docs')).toBe('/index.html');
+  expect(uri('/docs/')).toBe('/index.html');
+  expect(uri('/docs/cost')).toBe('/index.html');
+  expect(uri('/docs/security/')).toBe('/index.html');
+  expect(uri('/docs/other')).toBe('/docs/other');
   expect(uri('/about.txt')).toBe('/about.txt');
   expect(uri('/app.js')).toBe('/app.js');
   expect(uri('/')).toBe('/');
@@ -182,6 +185,21 @@ test('the API docs page is served at /docs/api', () => {
   expect(uri('/docs/api.md')).toBe('/docs/api.md');
 });
 
+test('the old /about and /security addresses move to /docs for good, keeping the query', () => {
+  // eslint-disable-next-line no-new-func
+  const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
+  const visit = (uri: string, querystring = {}) => handler({ request: { uri, querystring } });
+  for (const [from, to] of [['/about', '/docs'], ['/about/', '/docs'], ['/security', '/docs/security'], ['/security/', '/docs/security']]) {
+    const res = visit(from);
+    expect(res.statusCode).toBe(301);
+    expect(res.headers.location.value).toBe(to);
+  }
+  expect(visit('/about', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh');
+  expect(visit('/security', { a: { value: '1', multiValue: [{ value: '1' }, { value: '2' }] } }).headers.location.value).toBe('/docs/security?a=1&a=2');
+  // Only a fixed same-site path is ever used, so the redirect can't be pointed elsewhere.
+  expect(visit('//evil.example/about').uri).toBe('//evil.example/about');
+});
+
 test('the managed Microsoft-token API is off unless enabled', () => {
   template.resourceCountIs('AWS::ApiGatewayV2::Api', 0);
   template.resourceCountIs('AWS::ApiGatewayV2::Authorizer', 0);
@@ -241,6 +259,15 @@ describe('with the managed Microsoft-token API', () => {
     expect(Object.keys(managed.findOutputs('MicrosoftApiUrl'))).toHaveLength(1);
   });
 
+  test('the managed API stage is throttled, so a token-bearing flood gets 429 before Lambda runs', () => {
+    managed.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
+      StageName: '$default',
+      DefaultRouteSettings: Match.objectLike({ ThrottlingRateLimit: MANAGED_API_RATE, ThrottlingBurstLimit: MANAGED_API_BURST }),
+    });
+    expect(MANAGED_API_RATE).toBeLessThanOrEqual(10);
+    expect(MANAGED_API_BURST).toBeLessThanOrEqual(20);
+  });
+
   test('the website keeps its own sign-in path', () => {
     const website = template.toJSON().Resources;
     const withApi = managed.toJSON().Resources;
@@ -276,4 +303,16 @@ test('static files are edge-cached for a day, HTML shells are never cached long'
   for (const behavior of distribution.Properties.DistributionConfig.CacheBehaviors) {
     expect(behavior.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   }
+});
+
+test('both functions log JSON without per-call platform lines, kept for a month', () => {
+  const functions = Object.values(template.findResources('AWS::Lambda::Function'))
+    .map((r: any) => r.Properties).filter((p: any) => /plan\.dliu\.com/.test(p.Description || ''));
+  expect(functions).toHaveLength(2);
+  for (const fn of functions) {
+    expect(fn.LoggingConfig).toEqual(expect.objectContaining({ LogFormat: 'JSON', SystemLogLevel: 'WARN', ApplicationLogLevel: 'INFO' }));
+  }
+  const retention = Object.values(template.findResources('AWS::Logs::LogGroup')).map((r: any) => r.Properties.RetentionInDays);
+  expect(retention.length).toBeGreaterThanOrEqual(2);
+  for (const days of retention) expect(days).toBe(30);
 });

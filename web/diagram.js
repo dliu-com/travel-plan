@@ -1,6 +1,6 @@
 'use strict';
 
-// Small DOM/SVG diagram kit for the About and Security pages, ported from DL Weiqi.
+// Small DOM/SVG diagram kit for the docs pages, ported from DL Weiqi.
 // Callers pass already translated text; everything is set with textContent.
 window.PlanDiagram = (() => {
   const NS = 'http://www.w3.org/2000/svg';

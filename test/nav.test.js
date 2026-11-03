@@ -5,11 +5,12 @@ const web = (file) => fs.readFileSync(path.join(__dirname, '..', 'web', file), '
 const siteNav = (html) => html.match(/<nav class="dl-nav" aria-label="Site">([\s\S]*?)<\/nav>/)[1];
 const links = (nav) => [...nav.matchAll(/<a class="([^"]+)" href="([^"]+)"([^>]*)>([^<]*)<\/a>/g)].map(([, cls, href, attrs, text]) => ({ cls, href, attrs, text }));
 
-test('the app header links to About and the Docs page once each', () => {
+test('the app header has one docs entry: the Docs button to /docs', () => {
   const nav = links(siteNav(web('index.html')));
-  expect(nav.map((a) => [a.href, a.text])).toEqual([['/about', 'About'], ['/docs/api', 'Docs']]);
-  expect(nav.map((a) => a.cls)).toEqual(['dl-nav-link', 'dl-button']);
-  expect(nav[1].attrs).toContain('data-nav="docs"');
+  expect(nav.map((a) => [a.href, a.text])).toEqual([['/docs', 'Docs']]);
+  expect(nav.map((a) => a.cls)).toEqual(['dl-button']);
+  expect(nav[0].attrs).toContain('data-nav="docs"');
+  expect(web('index.html')).not.toMatch(/href="\/(about|security)"/);
 });
 
 test('the app header keeps Sign in / Sign out between Docs and the language switch', () => {
@@ -21,18 +22,31 @@ test('the app header keeps Sign in / Sign out between Docs and the language swit
   expect(app).toContain("class: 'dl-account'");
 });
 
-test('the Docs page header marks Docs as current, not About', () => {
-  const nav = links(siteNav(web('docs-api.html')));
-  expect(nav.map((a) => [a.href, a.text])).toEqual([['/about', 'About'], ['/docs/api', 'Docs']]);
-  expect(nav[0].attrs).not.toContain('aria-current');
-  expect(nav[1].attrs).toContain('aria-current="page"');
+test('the API docs page header has the Docs button, marked current, and the language switch', () => {
+  const html = siteNav(web('docs-api.html'));
+  const nav = links(html);
+  expect(nav.map((a) => [a.href, a.text])).toEqual([['/docs', 'Docs']]);
+  expect(nav[0].attrs).toContain('aria-current="page"');
+  expect(html.trim().endsWith('</div></div>')).toBe(true);
+  expect(html).toContain('<div class="dl-language"><button type="button" class="dl-button dl-language-toggle" aria-controls="dl-languages"');
+  expect(web('docs-api.js')).toContain("localStorage.getItem(KEY)");
+  expect(web('docs-api.js')).toContain("const KEY = 'plan-language';");
+  expect(web('app.js')).toContain("const LANGUAGE_KEY = 'plan-language';");
+});
+
+test('every docs page has the same four tabs in the same order', () => {
+  const want = [['/docs', 'Technical architecture'], ['/docs/cost', 'Cost'], ['/docs/security', 'Security'], ['/docs/api', 'API']];
+  const html = web('docs-api.html').match(/<nav class="dl-tabs"[^>]*>([\s\S]*?)<\/nav>/)[1];
+  expect([...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(([, href, text]) => [href, text])).toEqual(want);
+  expect(web('info.js')).toContain("[['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API']]");
 });
 
 test('the Docs label is localised with the rest of the header', () => {
   expect(web('app.js')).toContain(`document.querySelector('[data-nav="docs"]').textContent = t('文档', 'Docs');`);
 });
 
-test('the footer About link is localised too', () => {
-  expect(web('index.html')).toContain('<a href="/about" data-footer="about">About</a></footer>');
-  expect(web('app.js')).toContain(`document.querySelector('[data-footer="about"]').textContent = t('关于', 'About');`);
+test('every footer ends dliu.com · Docs, localised', () => {
+  expect(web('index.html')).toContain('<a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-footer="docs">Docs</a></footer>');
+  expect(web('app.js')).toContain(`document.querySelector('[data-footer="docs"]').textContent = t('文档', 'Docs');`);
+  expect(web('docs-api.html')).toContain('<a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-zh="文档" data-en="Docs">Docs</a></footer>');
 });

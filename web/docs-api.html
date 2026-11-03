@@ -17,25 +17,27 @@
   <header class="dl-header">
     <a class="dl-brand" href="/"><img class="dl-logo" src="/logo.svg" alt="" width="32" height="32">DL Travel Plan</a>
     <nav class="dl-nav" aria-label="Site">
-      <a class="dl-nav-link" href="/about">About</a>
-      <a class="dl-button" href="/docs/api" aria-current="page">Docs</a>
+      <a class="dl-button" href="/docs" aria-current="page" data-zh="文档" data-en="Docs">Docs</a>
+      <div class="dl-language"><button type="button" class="dl-button dl-language-toggle" aria-controls="dl-languages" aria-expanded="false" aria-label="Language / 语言">文/A</button><div id="dl-languages" class="dl-languages" role="group" aria-label="Language / 语言"><button type="button" data-language="zh" lang="zh-CN" aria-pressed="false">中文</button><button type="button" data-language="en" lang="en" aria-pressed="true">English</button></div></div>
     </nav>
   </header>
 
   <main class="dl-main dl-docs-main" id="main">
-    <nav class="dl-tabs" aria-label="Docs sections">
-      <a href="/about">About</a>
-      <a href="/security">Security</a>
+    <nav class="dl-tabs" aria-label="Docs sections" data-label-zh="文档章节" data-label-en="Docs sections">
+      <a href="/docs" data-zh="技术架构" data-en="Technical architecture">Technical architecture</a>
+      <a href="/docs/cost" data-zh="运行成本" data-en="Cost">Cost</a>
+      <a href="/docs/security" data-zh="安全" data-en="Security">Security</a>
       <a href="/docs/api" aria-current="page">API</a>
     </nav>
     <article class="dl-docs">
-      <h1>Travel plan API</h1>
-      <p class="lead">AI agents: read the <a href="/docs/api.md">plain-text API reference</a>. Authentication is required: configure your requester using the <a href="https://auth.dliu.com/docs/api">Auth API documentation</a>.</p>
+      <h1 data-zh="行程 API" data-en="Travel plan API">Travel plan API</h1>
+      <p class="lead" lang="zh-CN" data-lang="zh" hidden>AI 代理请阅读<a href="/docs/api.md">纯文本 API 参考</a>。需要身份验证：请按 <a href="https://auth.dliu.com/docs/api">Auth API 文档</a>配置请求方。下面的 API 参考只有英文版。</p>
+      <p class="lead" data-lang="en">AI agents: read the <a href="/docs/api.md">plain-text API reference</a>. Authentication is required: configure your requester using the <a href="https://auth.dliu.com/docs/api">Auth API documentation</a>.</p>
       <div id="api-doc" aria-live="polite"><p>Loading API reference…</p></div>
       <noscript><p>Read the <a href="/docs/api.md">Markdown reference</a> without JavaScript.</p></noscript>
     </article>
   </main>
 
-  <footer class="dl-footer"><a class="dl-footer-logo" href="https://dliu.com" aria-label="dliu.com"><img src="https://files.dliu.com/dliu.com/favicon.png" alt="" width="24" height="24"></a> <a href="https://dliu.com">dliu.com</a> · <a href="/">DL Travel Plan</a></footer>
+  <footer class="dl-footer"><a class="dl-footer-logo" href="https://dliu.com" aria-label="dliu.com"><img src="https://files.dliu.com/dliu.com/favicon.png" alt="" width="24" height="24"></a> <a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-zh="文档" data-en="Docs">Docs</a></footer>
 </body>
 </html>

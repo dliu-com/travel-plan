@@ -88,8 +88,53 @@
     }
   }
 
+  // 中文 / English: the same shared switch and saved choice as the app pages. The reference itself is English.
+  function setupLanguage() {
+    const KEY = 'plan-language';
+    const toggle = document.querySelector('.dl-language-toggle');
+    const languages = document.getElementById('dl-languages');
+    if (!toggle || !languages) return;
+    let language;
+    try { language = localStorage.getItem(KEY); } catch { /* storage unavailable */ }
+    if (!['zh', 'en'].includes(language)) language = /^zh(?:-|$)/i.test(navigator.language || '') ? 'zh' : 'en';
+    const setOpen = (open) => {
+      languages.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    const apply = () => {
+      const zh = language === 'zh';
+      document.documentElement.lang = zh ? 'zh-CN' : 'en';
+      for (const node of document.querySelectorAll('[data-zh]')) node.textContent = zh ? node.dataset.zh : node.dataset.en;
+      for (const node of document.querySelectorAll('[data-label-zh]')) node.setAttribute('aria-label', zh ? node.dataset.labelZh : node.dataset.labelEn);
+      for (const node of document.querySelectorAll('[data-lang]')) node.hidden = node.dataset.lang !== language;
+      document.querySelector('.dl-brand').lastChild.nodeValue = zh ? 'DL 旅行计划' : 'DL Travel Plan'; // keep the logo image
+      document.title = `API · ${zh ? 'DL 旅行计划' : 'DL Travel Plan'}`;
+      for (const button of languages.querySelectorAll('[data-language]')) button.setAttribute('aria-pressed', String(button.dataset.language === language));
+    };
+    languages.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-language]');
+      if (!button) return;
+      setOpen(false);
+      language = button.dataset.language;
+      try { localStorage.setItem(KEY, language); } catch { /* storage unavailable */ }
+      apply();
+    });
+    toggle.addEventListener('click', () => setOpen(!languages.classList.contains('is-open')));
+    document.addEventListener('click', (event) => {
+      if (languages.classList.contains('is-open') && !languages.contains(event.target) && !toggle.contains(event.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && languages.classList.contains('is-open')) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+    apply();
+  }
+
   if (typeof module === 'object' && module.exports) module.exports = { render };
   else {
+    setupLanguage();
     const root = document.getElementById('api-doc');
     if (root) load(root);
   }
