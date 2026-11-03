@@ -15,7 +15,7 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js
    │            │                  /docs/api → /docs-api.html; /about, /security → 301 /docs, /docs/security
    │            ├─ api/trips/*/pdf ──OAC──▶ Lambda function URL (lambda/pdf, read-only) ──▶ DynamoDB "Trips" (+ "Limits" for guest PDFs)
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken), "Limits"
-   │            │                                                        ├──▶ SSM /travel-plan/* (Entra settings)
+   │            │                                                        ├──▶ SSM /travel-plan/* (client ID, secret), /dliu/entra-tenant-id
    │            │                                                        └──▶ S3 files bucket (presigns URLs)
    │            └─ access logs (v2, set up by TrafficMonitor) ──▶ TrafficMonitor bucket
    └── presigned PUT/GET ──▶ S3 files bucket (private; pending/ expires after 1 day, trips/<id>/<file>)
@@ -83,7 +83,7 @@ At https://entra.microsoft.com:
 1. **App registrations → travel-plan**: single tenant, redirect URI platform **Web** = `https://plan.dliu.com/auth/callback`.
 2. **Certificates & secrets → New client secret**: copy the **Value**.
 3. **Enterprise applications → travel-plan**: set *Assignment required = Yes* and assign the people who may sign in. Global Administrators skip this check. Accounts must also be `@dliu.com`.
-4. Store the settings in SSM Parameter Store under `/travel-plan/`. The script prompts for the tenant ID, the client ID and the secret (SecureString):
+4. Store the settings in SSM Parameter Store under `/travel-plan/`. The script prompts for the client ID and the secret (SecureString). The tenant ID is shared by every dliu.com app and read from `/dliu/entra-tenant-id` (owned by the [dliu-com/audit](https://github.com/dliu-com/audit) stack), so deploy that first:
 
    ```bash
    make set-secrets
@@ -103,7 +103,7 @@ Trusted tools and AI agents can use a separate API Gateway HTTP API with Microso
 
 To enable it, the shared scopes and role are configured centrally. Then:
 
-1. Store the shared API settings in SSM (eu-west-1): `/travel-plan/api-tenant-id`, `/travel-plan/api-audience` and `/travel-plan/api-client-id`.
+1. The shared settings come from the dliu-com/audit stack's SSM parameters (eu-west-1), resolved at deploy time: `/dliu/entra-tenant-id` (issuer and `tid`) and `/dliu/api-app-id` (the shared dliu API app: audience and `azp`). This app keeps no copies.
 2. Set `"microsoftApi": true` in `cdk.json`, so later default deploys keep the API. (`-c microsoftApi=true` only lasts for one deploy.)
 3. `make deploy`, then `make outputs` shows `MicrosoftApiUrl`.
 

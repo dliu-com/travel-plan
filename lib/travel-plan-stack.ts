@@ -31,6 +31,9 @@ const ROOT = path.join(__dirname, '..');
 const LOG_RETENTION = logs.RetentionDays.THREE_MONTHS;
 
 export const PARAMETER_PREFIX = '/travel-plan';
+// Shared by every dliu.com app, owned by the dliu-com/audit stack: the Entra tenant and the shared "dliu API" app ID.
+export const TENANT_PARAMETER = '/dliu/entra-tenant-id';
+export const API_APP_PARAMETER = '/dliu/api-app-id';
 /** Managed API stage throttling, requests per second and burst, shared by every caller. */
 export const MANAGED_API_RATE = 10;
 export const MANAGED_API_BURST = 20;
@@ -92,7 +95,7 @@ export interface TravelPlanStackProps extends StackProps {
   trafficLogging?: boolean;
   /**
    * Managed API for Microsoft-issued access tokens (shared dliu API, trip.* scopes) on API Gateway.
-   * Needs the SSM parameters /travel-plan/api-tenant-id, api-audience and api-client-id. Off by default.
+   * Reads the shared SSM parameters /dliu/entra-tenant-id and /dliu/api-app-id at deploy time. Off by default.
    */
   microsoftApi?: boolean;
 }
@@ -176,6 +179,7 @@ export class TravelPlanStack extends Stack {
         LIMITS_TABLE: limitsTable.tableName,
         FILES_BUCKET: filesBucket.bucketName,
         PARAMETER_PREFIX,
+        TENANT_PARAMETER,
       },
       ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'ApiLogs', {
@@ -187,11 +191,13 @@ export class TravelPlanStack extends Stack {
     limitsTable.grantReadWriteData(apiHandler);
     filesBucket.grantReadWrite(apiHandler);
     filesBucket.grantDelete(apiHandler);
-    // Both functions read the sign-in secrets (the session key) from SSM.
+    // Both functions read the sign-in settings from SSM: this app's client ID and secret (the session key) and the
+    // shared tenant ID. The managed API's tenant and app ID are resolved at deploy time, so they aren't granted here.
+    const parameterArn = (name: string) => this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: name.slice(1) });
     const readSecrets = (fn: lambda.Function) => {
       fn.addToRolePolicy(new iam.PolicyStatement({
         actions: ['ssm:GetParameters'],
-        resources: [this.formatArn({ service: 'ssm', resource: 'parameter', resourceName: PARAMETER_PREFIX.slice(1) + '/*' })],
+        resources: [parameterArn(`${PARAMETER_PREFIX}/*`), parameterArn(TENANT_PARAMETER)],
       }));
       fn.addToRolePolicy(new iam.PolicyStatement({
         actions: ['kms:Decrypt'],
@@ -219,6 +225,7 @@ export class TravelPlanStack extends Stack {
         TABLE_NAME: table.tableName,
         LIMITS_TABLE: limitsTable.tableName,
         PARAMETER_PREFIX,
+        TENANT_PARAMETER,
       },
       ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'PdfLogs', {
@@ -236,10 +243,11 @@ export class TravelPlanStack extends Stack {
     // claims (lambda/api/api-access.js). The website, its sign-in cookie and share links don't use this API.
     let managedApiUrl: string | undefined;
     if (props.microsoftApi) {
-      const parameter = (name: string) => ssm.StringParameter.valueForStringParameter(this, `${PARAMETER_PREFIX}/api-${name}`);
-      const tenantId = parameter('tenant-id');
-      const audience = parameter('audience');
-      const clientId = parameter('client-id');
+      const tenantId = ssm.StringParameter.valueForStringParameter(this, TENANT_PARAMETER);
+      // The shared "dliu API" app: tokens are issued for it (audience) and through it (azp).
+      const apiAppId = ssm.StringParameter.valueForStringParameter(this, API_APP_PARAMETER);
+      const audience = apiAppId;
+      const clientId = apiAppId;
       const httpApi = new apigateway.HttpApi(this, 'MicrosoftApi', {
         description: 'Travel plan API: Microsoft Entra access tokens, delegated trip.* permissions and assigned users',
       });

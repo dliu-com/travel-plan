@@ -33,7 +33,7 @@ test('share-link usage counters live in their own expiring table, used by both f
   template.hasResource('AWS::DynamoDB::GlobalTable', { DeletionPolicy: 'Delete' });
 });
 
-test('api can query the share index and read only its own parameters', () => {
+test('api can query the share index and read only its own parameters and the shared tenant', () => {
   const statements = Object.values(template.findResources('AWS::IAM::Policy'))
     .flatMap((policy: any) => policy.Properties.PolicyDocument.Statement);
   const dynamo = statements.find((s: any) => ([] as string[]).concat(s.Action).includes('dynamodb:Query'));
@@ -43,10 +43,23 @@ test('api can query the share index and read only its own parameters', () => {
     PolicyDocument: {
       Statement: Match.arrayWith([Match.objectLike({
         Action: 'ssm:GetParameters',
-        Resource: { 'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp(':parameter/travel-plan/\\*$')])] },
+        Resource: [
+          { 'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp(':parameter/travel-plan/\\*$')])] },
+          { 'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp(':parameter/dliu/entra-tenant-id$')])] },
+        ],
       })]),
     },
   });
+  const ssmResources = JSON.stringify(Object.values(template.findResources('AWS::IAM::Policy'))
+    .flatMap((policy: any) => policy.Properties.PolicyDocument.Statement)
+    .filter((st: any) => JSON.stringify(st.Action).includes('ssm:')).map((st: any) => st.Resource));
+  expect(ssmResources).not.toMatch(/parameter\/dliu\/\*|parameter\/\*|api-app-id/);
+  for (const handler of ['index.handler', 'pdf/index.handler']) {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: handler,
+      Environment: { Variables: Match.objectLike({ PARAMETER_PREFIX: '/travel-plan', TENANT_PARAMETER: '/dliu/entra-tenant-id' }) },
+    });
+  }
 });
 
 test('api and auth paths go to the function URL with all methods and no caching', () => {
@@ -220,12 +233,13 @@ describe('with the managed Microsoft-token API', () => {
       AuthorizerType: 'JWT',
       IdentitySource: ['$request.header.Authorization'],
       JwtConfiguration: {
-        Issuer: { 'Fn::Join': ['', ['https://login.microsoftonline.com/', { Ref: Match.stringLikeRegexp('travelplanapitenantid') }, '/v2.0']] },
-        Audience: [{ Ref: Match.stringLikeRegexp('travelplanapiaudience') }],
+        Issuer: { 'Fn::Join': ['', ['https://login.microsoftonline.com/', { Ref: Match.stringLikeRegexp('dliuentratenantid') }, '/v2.0']] },
+        Audience: [{ Ref: Match.stringLikeRegexp('dliuapiappid') }],
       },
     });
     const parameters = Object.values(managed.toJSON().Parameters).map((p: any) => p.Default);
-    expect(parameters).toEqual(expect.arrayContaining(['/travel-plan/api-tenant-id', '/travel-plan/api-audience', '/travel-plan/api-client-id']));
+    expect(parameters).toEqual(expect.arrayContaining(['/dliu/entra-tenant-id', '/dliu/api-app-id']));
+    expect(parameters.filter((name: string) => /^\/travel-plan\//.test(name))).toEqual([]);
   });
 
   test('exactly the published routes, each with the JWT authorizer and its one scope', () => {
@@ -250,9 +264,9 @@ describe('with the managed Microsoft-token API', () => {
         Handler: handler,
         Environment: { Variables: Match.objectLike({
           API_GATEWAY_ID: { Ref: Match.stringLikeRegexp('MicrosoftApi') },
-          API_TENANT_ID: { Ref: Match.stringLikeRegexp('travelplanapitenantid') },
-          API_AUDIENCE: { Ref: Match.stringLikeRegexp('travelplanapiaudience') },
-          API_CLIENT_ID: { Ref: Match.stringLikeRegexp('travelplanapiclientid') },
+          API_TENANT_ID: { Ref: Match.stringLikeRegexp('dliuentratenantid') },
+          API_AUDIENCE: { Ref: Match.stringLikeRegexp('dliuapiappid') },
+          API_CLIENT_ID: { Ref: Match.stringLikeRegexp('dliuapiappid') },
         }) },
       });
     }

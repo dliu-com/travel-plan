@@ -91,7 +91,7 @@ window.PlanInfo = (() => {
           { badge: t('数据', 'Data'), tone: 'private', label: t('私有数据', 'Private data'), link: t('IAM 最小权限', 'Least-privilege IAM'), nodes: [
             { icon: 'dynamodb', title: 'DynamoDB', text: t('行程与安排，按需计费，时间点恢复', 'Travel plans and events, on demand, point-in-time recovery') },
             { icon: 's3', title: t('S3 附件桶', 'S3 files bucket'), text: t('私有，仅限签名链接', 'Private, signed URLs only') },
-            { icon: 'lock', title: 'SSM Parameter Store', text: t('Entra 客户端密钥（加密）', 'Entra client secret (encrypted)') },
+            { icon: 'lock', title: 'SSM Parameter Store', text: t('Entra 客户端密钥（加密）；租户 ID 与所有 dliu.com 应用共用（/dliu/）', 'Entra client secret (encrypted); the tenant ID is shared by all dliu.com apps (/dliu/)') },
           ] },
           { badge: t('监控', 'Ops'), label: t('日志与流量', 'Logs and traffic'), link: null, nodes: [
             { icon: 'chart', title: 'TrafficMonitor', text: t('CloudFront 访问日志 → raw/plan/', 'CloudFront access logs → raw/plan/') },
@@ -298,7 +298,7 @@ window.PlanInfo = (() => {
         [t('附件', 'Attachments'), 'E', t('病毒或伪装扩展名', 'Malware or disguised extensions'), t('清除文件名中的方向控制字符；危险类型只能下载；没有病毒扫描', 'Direction marks are stripped from names; risky types only download; no virus scan'), MEDIUM],
         [t('分享链接访客', 'Share-link guests'), 'T', t('添加钓鱼链接或删除安排', 'Adding phishing links or deleting events'), t('只限持链接者；记录最后修改人；DynamoDB 时间点恢复可回滚 35 天', 'Link holders only; the last editor is recorded; point-in-time recovery can roll back 35 days'), MEDIUM],
         [t('站点桶与 Lambda URL', 'Site bucket and Lambda URLs'), 'S', t('绕过 CloudFront', 'Going around CloudFront'), t('只信任这个分发的 OAC；Lambda URL 需要 IAM 签名', 'Only this distribution’s OAC is trusted; Lambda URLs need IAM signing'), LOW],
-        ['DynamoDB · SSM', 'I · E', t('权限过宽', 'Over-broad access'), t('API：本表、本桶和 /travel-plan/ 参数；PDF：只读本表和参数，不能访问附件桶', 'API: this table, this bucket and the /travel-plan/ parameters; PDF: reads the table and parameters only, no files bucket'), LOW],
+        ['DynamoDB · SSM', 'I · E', t('权限过宽', 'Over-broad access'), t('API：本表、本桶、/travel-plan/ 参数和共用的 /dliu/entra-tenant-id；PDF：只读本表和这些参数，不能访问附件桶', 'API: this table, this bucket, the /travel-plan/ parameters and the shared /dliu/entra-tenant-id; PDF: reads the table and those parameters only, no files bucket'), LOW],
         [t('依赖包', 'Dependencies'), 'T · E', t('供应链攻击', 'Supply-chain attack'), t('API 函数零依赖；PDF 函数只有 pdfkit，且权限只读；CSP 只允许本站脚本；锁定文件已提交', 'The API function has no dependencies; the PDF function only pdfkit, with read-only rights; the CSP only allows our own scripts; lockfiles are committed'), LOW],
       ]),
       callout('budget', t(
@@ -403,8 +403,8 @@ window.PlanInfo = (() => {
       t('写请求：Origin 必须是 https://plan.dliu.com，类型必须是 application/json，请求体不超过 64 KB', 'Writes: Origin must be https://plan.dliu.com, the type application/json and the body at most 64 KB'),
       t('托管 API：API Gateway JWT 授权器；默认阶段每秒 10 个、突发 20 个', 'Managed API: API Gateway JWT authoriser; default stage limited to 10 requests a second, bursts of 20'),
       t('附件：上传签名 15 分钟并锁定大小和类型；下载签名 5 分钟；只有图片、PDF、纯文本、音视频可在浏览器内打开', 'Attachments: upload URLs last 15 minutes and fix the size and type; download URLs last 5 minutes; only images, PDF, plain text, audio and video open in the browser'),
-      t('Lambda：保留并发 20；IAM 只允许读写本表、本桶和 /travel-plan/ 参数；JSON 日志，只记录警告和错误，保留 3 个月', 'Lambda: reserved concurrency of 20; IAM only allows this table, this bucket and the /travel-plan/ parameters; JSON logs, warnings and errors only, kept 3 months'),
-      t('PDF 导出：保留并发 5，只能读本表和 /travel-plan/ 参数，不能访问附件桶；只接受 GET；用户文字以纯文本排版，链接只保留 http(s)；PDF 不缓存', 'PDF export: reserved concurrency of 5; can only read this table and the /travel-plan/ parameters, not the files bucket; GET only; user text is laid out as plain text and only http(s) links are kept; PDFs are never cached'),
+      t('Lambda：保留并发 20；IAM 只允许读写本表、本桶、/travel-plan/ 参数和共用的 /dliu/entra-tenant-id；JSON 日志，只记录警告和错误，保留 3 个月', 'Lambda: reserved concurrency of 20; IAM only allows this table, this bucket, the /travel-plan/ parameters and the shared /dliu/entra-tenant-id; JSON logs, warnings and errors only, kept 3 months'),
+      t('PDF 导出：保留并发 5，只能读本表、/travel-plan/ 参数和共用的租户 ID，不能访问附件桶；只接受 GET；用户文字以纯文本排版，链接只保留 http(s)；PDF 不缓存', 'PDF export: reserved concurrency of 5; can only read this table, the /travel-plan/ parameters and the shared tenant ID, not the files bucket; GET only; user text is laid out as plain text and only http(s) links are kept; PDFs are never cached'),
     ])));
 
     const refs = el('p', 'source');
