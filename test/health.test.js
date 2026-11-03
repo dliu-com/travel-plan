@@ -112,7 +112,7 @@ test('the default checks are one GetItem of a fixed key and one HeadObject outsi
   await expect(denied.reachable('health-check')).rejects.toThrow();
 });
 
-// ------------------------------------------------------------------ /docs/health (rendered with a tiny DOM)
+// ------------------------------------------------------------------ /docs#health, the Testing tab (rendered with a tiny DOM)
 class Node {
   constructor(tag) {
     this.tagName = tag;
@@ -147,11 +147,11 @@ function renderHealth() {
   return { root, info: window.PlanInfo };
 }
 
-test('/docs/health is a docs tab with a diagram of how the site is tested', () => {
+test('/docs#health is the Testing tab with a diagram of how the site is tested', () => {
   const { root } = renderHealth();
   const tabs = root.all((n) => n.has('dl-tabs'))[0];
   const current = tabs.all((n) => n.attributes['aria-current'] === 'page');
-  expect(current.map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs/health', 'Health checks']]);
+  expect(current.map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs#health', 'Testing']]);
   const flows = root.all((n) => n.has('dg-flow'));
   expect(flows.length).toBeGreaterThanOrEqual(2);
   expect(root.all((n) => n.has('dg-step')).length).toBeGreaterThanOrEqual(6);
@@ -161,7 +161,14 @@ test('/docs/health is a docs tab with a diagram of how the site is tested', () =
   expect(root.textContent).toContain('What isn’t tested');
 });
 
-test('/docs/health folds every technical detail in closed <details> and links the Markdown', () => {
+test('/docs#health opens the Testing tab on load and when only the hash changes', () => {
+  const app = read('web/app.js');
+  expect(app).toContain("renderInfo(info[1] || (location.hash === '#health' ? 'health' : 'architecture'));");
+  expect(app).toContain("window.addEventListener('hashchange', () => {");
+  expect(app).not.toMatch(/cost\|security\|health/);
+});
+
+test('/docs#health folds every technical detail in closed <details> and links the Markdown', () => {
   const { root } = renderHealth();
   const details = root.all((n) => n.tagName === 'details');
   expect(details.length).toBeGreaterThanOrEqual(2);

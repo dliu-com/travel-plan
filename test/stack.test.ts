@@ -113,7 +113,6 @@ test('trip and share pages are rewritten to the app shell', () => {
   expect(uri('/docs/')).toBe('/index.html');
   expect(uri('/docs/cost')).toBe('/index.html');
   expect(uri('/docs/security/')).toBe('/index.html');
-  expect(uri('/docs/health')).toBe('/index.html');
   expect(uri('/docs/health.md')).toBe('/docs/health.md');
   expect(uri('/docs/other')).toBe('/docs/other');
   expect(uri('/about.txt')).toBe('/about.txt');
@@ -200,17 +199,20 @@ test('the API docs page is served at /docs/api', () => {
   expect(uri('/docs/api.md')).toBe('/docs/api.md');
 });
 
-test('the old /about and /security addresses move to /docs for good, keeping the query', () => {
+test('the old /about, /security and /docs/health addresses move to /docs for good, keeping the query', () => {
   // eslint-disable-next-line no-new-func
   const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
   const visit = (uri: string, querystring = {}) => handler({ request: { uri, querystring } });
-  for (const [from, to] of [['/about', '/docs'], ['/about/', '/docs'], ['/security', '/docs/security'], ['/security/', '/docs/security']]) {
+  for (const [from, to] of [['/about', '/docs'], ['/about/', '/docs'], ['/security', '/docs/security'], ['/security/', '/docs/security'], ['/docs/health', '/docs#health'], ['/docs/health/', '/docs#health']]) {
     const res = visit(from);
     expect(res.statusCode).toBe(301);
     expect(res.headers.location.value).toBe(to);
   }
   expect(visit('/about', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh');
   expect(visit('/security', { a: { value: '1', multiValue: [{ value: '1' }, { value: '2' }] } }).headers.location.value).toBe('/docs/security?a=1&a=2');
+  // The query goes before the Testing tab's #fragment.
+  expect(visit('/docs/health', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh#health');
+  expect(visit('/docs/health.md').uri).toBe('/docs/health.md');
   // Only a fixed same-site path is ever used, so the redirect can't be pointed elsewhere.
   expect(visit('//evil.example/about').uri).toBe('//evil.example/about');
 });

@@ -171,7 +171,7 @@
       : [el('a', { class: 'dl-button dl-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') })]));
   }
 
-  // narrow: lists and trips; wide: the calendar; docs: /docs, /docs/cost, /docs/security and /docs/health.
+  // narrow: lists and trips; wide: the calendar; docs: /docs (and its #health Testing tab), /docs/cost and /docs/security.
   function setLayout(kind) {
     main.classList.toggle('dl-narrow', kind === 'narrow');
     main.classList.toggle('dl-docs-main', kind === 'docs');
@@ -1142,11 +1142,11 @@
 
   async function start() {
     const path = location.pathname;
-    const info = path.match(/^\/docs(?:\/(cost|security|health))?\/?$/);
+    const info = path.match(/^\/docs(?:\/(cost|security))?\/?$/);
     markNav(info && 'docs');
     setLayout(info ? 'docs' : 'narrow');
     if (info) {
-      renderInfo(info[1] || 'architecture');
+      renderInfo(info[1] || (location.hash === '#health' ? 'health' : 'architecture'));
       return;
     }
     const legacyShare = path.match(/^\/s\/([A-Za-z0-9_-]{24})\/?$/);
@@ -1245,5 +1245,12 @@
   });
   applyLanguage();
 
+  // The Testing tab is /docs#health: switching between it and /docs (tab click, back, forward) only changes the hash.
+  window.addEventListener('hashchange', () => {
+    if (/^\/docs\/?$/.test(location.pathname)) {
+      renderInfo(location.hash === '#health' ? 'health' : 'architecture');
+      window.scrollTo(0, 0);
+    }
+  });
   start();
 })();

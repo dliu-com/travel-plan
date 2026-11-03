@@ -42,9 +42,10 @@ export const MANAGED_API_BURST = 20;
 // Link-preview bots (WhatsApp, iMessage, Telegram, Slack, Teams…) get a bare page with the
 // title and no images, so chats show a plain link instead of a big icon card.
 export const PREVIEW_BOTS = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|redditbot|Pinterest|vkShare|Viber/i;
-// Docs: /docs (technical architecture), /docs/cost, /docs/security and /docs/health are app-shell pages, /docs/api has its own
-// page. The old /about and /security addresses move there for good (301), keeping any query string.
-export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security' };
+// Docs: /docs (technical architecture, and the Testing tab at /docs#health), /docs/cost and /docs/security are app-shell
+// pages, /docs/api has its own page. The old /about, /security and /docs/health addresses move there for good (301),
+// keeping any query string (placed before a #fragment).
+export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security', '/docs/health': '/docs#health' };
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
   var uri = request.uri;
@@ -57,15 +58,19 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
       var values = qs[key].multiValue || [qs[key]];
       for (var i = 0; i < values.length; i++) query.push(key + '=' + values[i].value);
     }
+    var target = moved[path];
+    var hash = target.indexOf('#');
+    var base = hash < 0 ? target : target.substring(0, hash);
+    var fragment = hash < 0 ? '' : target.substring(hash);
     return { statusCode: 301, statusDescription: 'Moved Permanently',
-      headers: { location: { value: moved[path] + (query.length ? '?' + query.join('&') : '') }, 'cache-control': { value: 'max-age=86400' } } };
+      headers: { location: { value: base + (query.length ? '?' + query.join('&') : '') + fragment }, 'cache-control': { value: 'max-age=86400' } } };
   }
   if (path === '/docs/api') {
     request.uri = '/docs-api.html';
     return request;
   }
   var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
-    || path === '/docs' || path === '/docs/cost' || path === '/docs/security' || path === '/docs/health';
+    || path === '/docs' || path === '/docs/cost' || path === '/docs/security';
   var agent = request.headers && request.headers['user-agent'] ? request.headers['user-agent'].value : '';
   if (page && ${PREVIEW_BOTS}.test(agent)) {
     return {
@@ -102,7 +107,7 @@ export interface TravelPlanStackProps extends StackProps {
 
 // The agent-readable API docs, with the managed API's URL filled in at deploy time.
 export const API_DOCS = 'docs/api.md';
-// How status.dliu.com tests the site, for machines (the people's version is /docs/health).
+// How status.dliu.com tests the site, for machines (the people's version is the Testing tab, /docs#health).
 export const HEALTH_DOCS = 'docs/health.md';
 export const MARKDOWN = 'docs/*.md';
 // The HTML shells (app and API docs page) are never edge-cached for long; everything else under web/ is.

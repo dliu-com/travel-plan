@@ -111,13 +111,14 @@ async function handle(req, res) {
     res.writeHead(result.statusCode, result.headers);
     return res.end(result.isBase64Encoded ? Buffer.from(result.body, 'base64') : result.body);
   }
-  const moved = { '/about': '/docs', '/security': '/docs/security' }[url.pathname.replace(/(.)\/$/, '$1')];
+  const moved = { '/about': '/docs', '/security': '/docs/security', '/docs/health': '/docs#health' }[url.pathname.replace(/(.)\/$/, '$1')];
   if (moved) {
-    res.writeHead(301, { location: moved + url.search });
+    const [base, fragment = ''] = moved.split('#');
+    res.writeHead(301, { location: base + url.search + (fragment && `#${fragment}`) });
     res.end();
     return;
   }
-  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/docs(\/(cost|security|health))?\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
+  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/docs(\/(cost|security))?\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
   if (/^\/docs\/api\/?$/.test(url.pathname)) file = '/docs-api.html';
   // The deploy fills in the managed API's URL (lib/travel-plan-stack.ts); there is no managed API locally.
   if (url.pathname === '/docs/api.md') {

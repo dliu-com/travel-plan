@@ -1,6 +1,6 @@
 'use strict';
 
-// The /docs (technical architecture), /docs/cost, /docs/security and /docs/health pages. All text is set through textContent (via PlanDiagram and el), never as HTML.
+// The /docs (technical architecture), /docs/cost, /docs/security and /docs#health (Testing) pages. All text is set through textContent (via PlanDiagram and el), never as HTML.
 window.PlanInfo = (() => {
   const D = () => window.PlanDiagram;
   const REVIEWED = { zh: '2026 年 11 月 3 日', en: '3 November 2026' };
@@ -27,7 +27,7 @@ window.PlanInfo = (() => {
     node.append(el('h2', '', title), ...children);
     return node;
   }
-  const TABS = (t) => [['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API'], ['/docs/health', t('测试', 'Health checks')]];
+  const TABS = (t) => [['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API'], ['/docs#health', t('测试', 'Testing')]];
   function tabs(t, current) {
     const nav = el('nav', 'dl-tabs');
     nav.setAttribute('aria-label', t('文档章节', 'Docs sections'));
@@ -549,7 +549,7 @@ window.PlanInfo = (() => {
     const md = el('p', 'source');
     md.append(link('/docs/health.md', t('完整技术版本（Markdown）', 'Full technical version (Markdown)')));
     page.append(md);
-    return [tabs(t, '/docs/health'), page];
+    return [tabs(t, '/docs#health'), page];
   }
 
   return { architecture, cost, security, health, HEALTH_FUNCTIONS, HEALTH_ENDPOINT, GUEST_CHECKS };

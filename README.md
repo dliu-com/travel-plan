@@ -11,8 +11,8 @@ Private travel plans at **https://plan.dliu.com**, written like a blog: one trav
 
 ```
 browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js, style.css)
-   │            │  viewer-request: /plan/*, /trips/*, /s/*, /docs, /docs/cost, /docs/security, /docs/health → /index.html;
-   │            │                  /docs/api → /docs-api.html; /about, /security → 301 /docs, /docs/security
+   │            │  viewer-request: /plan/*, /trips/*, /s/*, /docs, /docs/cost, /docs/security → /index.html;
+   │            │                  /docs/api → /docs-api.html; /about, /security, /docs/health → 301 /docs, /docs/security, /docs#health
    │            ├─ health (60 s cached, no cookies/headers/query) ──OAC──▶ Lambda function URL (lambda/api)
    │            ├─ api/trips/*/pdf ──OAC──▶ Lambda function URL (lambda/pdf, read-only) ──▶ DynamoDB "Trips" (+ "Limits" for guest PDFs)
    │            ├─ api/*, auth/* ──OAC──▶ Lambda function URL (lambda/api) ──▶ DynamoDB "Trips" (+ GSI byShareToken), "Limits"
@@ -26,7 +26,7 @@ browser ──▶ CloudFront ──▶ S3 (web/: index.html, app.js, calendar.js
 | --- | --- | --- |
 | `/` | signed in | trip index plus "New trip"; signed-out visitors only see a sign-in card |
 | `/plan/<id>` | signed in | the post with editing, events, files and the share panel |
-| `/docs`, `/docs/cost`, `/docs/security`, `/docs/api`, `/docs/health` | anyone | docs tabs: technical architecture, cost (including the most a flood can cost), security (threat model, findings, live penetration tests, code review), the API reference and health checks (how status.dliu.com tests the site as a guest: a diagram, one plain line per function, technical details folded). `/about` and `/security` 301 to `/docs` and `/docs/security`, keeping the query |
+| `/docs`, `/docs/cost`, `/docs/security`, `/docs/api`, `/docs#health` | anyone | docs tabs: technical architecture, cost (including the most a flood can cost), security (threat model, findings, live penetration tests, code review), the API reference and Testing (`#health` on `/docs`: how status.dliu.com tests the site as a guest, with a diagram, one plain line per function and technical details folded). `/about`, `/security` and `/docs/health` 301 to `/docs`, `/docs/security` and `/docs#health`, keeping the query |
 | `/docs/api.md`, `/docs/health.md` | anyone | the same API reference and health-check contract as plain Markdown (`text/markdown; charset=utf-8`) for agents and for implementing the tests |
 | `GET /health` | anyone | health report for https://status.dliu.com (`application/health+json`, 200 pass/warn, 503 fail): one DynamoDB `GetItem`, one S3 `HeadObject` and the sign-in settings, in parallel with 2 s timeouts. CloudFront forwards no cookies, Authorization header or query string, and caches it 60 s. Code in `lambda/api/health.js` |
 | `/plan/<id>?token=<token>` | anyone with the link | the same post, editable, without the share panel or trip deletion |
@@ -43,7 +43,7 @@ Hardening: strict CSP (`script-src 'self'`; styles only from the site and `https
 
 Security review: `scripts/pentest.sh` is a read-only, credential-free live test of every route (authn/authz, forged sessions and JWTs, share-token IDOR, injection, CRLF, CSRF/CORS, open redirects, OIDC, direct origin access, cache tricks, hidden files, TLS and headers, a 200-request tokenless burst on the managed API). Run it with `./scripts/pentest.sh`; it prints a Markdown table and exits non-zero if any check fails. The latest results, threat model (STRIDE and denial of wallet) and code review are on `/docs/security` and `/docs/cost`.
 
-Look: the site uses the shared dliu.com look (spec: <https://files.dliu.com/dliu.com/README.md>). Both page shells (`web/index.html`, `web/docs-api.html`) load `ui/v1/dl.css`, then `ui/v1/dl-docs.css`, then `/style.css`. They use the shared `dl-header` with the app's own logo (`web/logo.svg`, a white map pin on the DL blue, also the favicon) and name as one `dl-brand` link, the `dl-nav` menu (Docs, Sign in / out, the `dl-language` switch, on every page including `/docs/api`) and the `dl-footer` (`dliu.com · Docs`), which starts with the shared DL logo linking to dliu.com. Buttons, sign-in, tabs, tables and status pills are the shared `dl-*` classes. The docs (`/docs`, `/docs/cost`, `/docs/security`, `/docs/api`, `/docs/health`) use `dl-docs` and the same five `dl-tabs` (Technical architecture · Cost · Security · API · Health checks, in English and Chinese) and the shared diagram kit. `web/style.css` keeps only what belongs to the app (trip list, plan post, events and their status colours, forms, files, calendar, print), all on the shared `--dl-*` colours. The site is light-theme only and there is no shared JavaScript. `test/shared-ui.test.js` guards this.
+Look: the site uses the shared dliu.com look (spec: <https://files.dliu.com/dliu.com/README.md>). Both page shells (`web/index.html`, `web/docs-api.html`) load `ui/v1/dl.css`, then `ui/v1/dl-docs.css`, then `/style.css`. They use the shared `dl-header` with the app's own logo (`web/logo.svg`, a white map pin on the DL blue, also the favicon) and name as one `dl-brand` link, the `dl-nav` menu (Docs, Sign in / out, the `dl-language` switch, on every page including `/docs/api`) and the `dl-footer` (`dliu.com · Docs`), which starts with the shared DL logo linking to dliu.com. Buttons, sign-in, tabs, tables and status pills are the shared `dl-*` classes. The docs (`/docs`, `/docs/cost`, `/docs/security`, `/docs/api`, `/docs#health`) use `dl-docs` and the same five `dl-tabs` (Technical architecture · Cost · Security · API · Testing, in English and Chinese) and the shared diagram kit. `web/style.css` keeps only what belongs to the app (trip list, plan post, events and their status colours, forms, files, calendar, print), all on the shared `--dl-*` colours. The site is light-theme only and there is no shared JavaScript. `test/shared-ui.test.js` guards this.
 
 Data: one DynamoDB item per trip. Events live in a map keyed by event id, so two people editing different events never overwrite each other. Writes must come from the site's own origin and be `application/json`.
 
@@ -65,7 +65,7 @@ CloudFront serves the site from every edge location (`PriceClass_All`) over HTTP
 | What | Cache-Control | At the edge |
 | --- | --- | --- |
 | Scripts, styles, icon, `/docs/api.md`, `/docs/health.md` (site bucket; the `.md` files as `text/markdown; charset=utf-8`) | `public, max-age=300, s-maxage=86400, stale-while-revalidate=86400` | up to 1 day |
-| HTML shells: `/`, `/plan/…`, `/s/…`, `/docs`, `/docs/cost`, `/docs/security`, `/docs/api`, `/docs/health` | `no-cache` | revalidated on every load |
+| HTML shells: `/`, `/plan/…`, `/s/…`, `/docs` (including `#health`), `/docs/cost`, `/docs/security`, `/docs/api` | `no-cache` | revalidated on every load |
 | `/health` | `public, max-age=60` | 60 s (HealthCache policy, keyed on nothing) |
 | `/api/*`, `/auth/*`, PDF export | `no-store`, CachingDisabled | never |
 | Attachments | private bucket, reached by short-lived presigned S3 links | not behind CloudFront |
