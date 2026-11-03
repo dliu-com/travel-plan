@@ -95,7 +95,7 @@ window.PlanInfo = (() => {
           ] },
           { badge: t('监控', 'Ops'), label: t('日志与流量', 'Logs and traffic'), link: null, nodes: [
             { icon: 'chart', title: 'TrafficMonitor', text: t('CloudFront 访问日志 → raw/plan/', 'CloudFront access logs → raw/plan/') },
-            { icon: 'eye', title: 'CloudWatch Logs', text: t('API 错误日志，保留 1 个月', 'API errors, kept for 1 month') },
+            { icon: 'eye', title: 'CloudWatch Logs', text: t('API 错误日志，保留 3 个月', 'API errors, kept for 3 months') },
           ] },
         ],
         note: t(
@@ -122,7 +122,7 @@ window.PlanInfo = (() => {
           { icon: 'lambda', title: t('API 校验', 'API check'), text: t('令牌必须属于这个行程', 'The token must belong to this travel plan') },
           { icon: 'map', title: t('查看并编辑', 'View and edit'), text: t('仅限这一个行程', 'This one travel plan only'), tone: 'good' },
         ],
-        note: t('每个行程创建时就有分享链接，无需另外创建，也不能停用。', 'Every travel plan gets its share link when it is created; there is nothing to create, and links are not turned off.'),
+        note: t('每个行程创建时就有分享链接，有效期 3 个月。过期后，登录成员点“创建链接”生成新链接；成员也可以随时“重置链接”，旧链接立即失效。', 'Every travel plan gets its share link when it is created, and a link works for 3 months. After that a signed-in member chooses Create link; members can also Reset link at any time, which stops the old link at once.'),
       }),
       flow({
         title: t('附件上传与下载', 'Attachments'),
@@ -181,7 +181,7 @@ window.PlanInfo = (() => {
         [t('数据传出', 'Data out'), t('附件下载', 'Attachment downloads'), t('每月 100 GB 免费', '100 GB a month free'), '$0'],
         ['Route 53', t('plan.dliu.com DNS 记录', 'plan.dliu.com DNS record'), t('与 dliu.com 共用托管区', 'Shared dliu.com zone'), t('共用 $0.50', 'shared $0.50')],
         ['ACM · SSM · Entra ID', t('证书、密钥、登录', 'Certificate, secret, sign-in'), t('免费', 'Free'), '$0'],
-        ['CloudWatch Logs', t('API 日志，1 个月', 'API logs, 1 month'), t('5 GB 免费', '5 GB free'), '$0'],
+        ['CloudWatch Logs', t('API 日志，3 个月', 'API logs, 3 months'), t('5 GB 免费', '5 GB free'), '$0'],
       ]),
       callout('budget', t(
         '预计合计：每月 $0–$0.10。每个行程的附件总共不超过 1 GB（约每月 $0.02）。分享链接每天对每个行程有用量上限（见安全页面），即使链接泄露也只能产生很少的费用。API 最多同时运行 20 个实例，PDF 导出最多 5 个，突发流量无法占满账户里其他网站共用的 Lambda 并发。',
@@ -225,8 +225,8 @@ window.PlanInfo = (() => {
     page.append(
       el('h1', '', t('安全', 'Security')),
       callout('shield', t(
-        `${REVIEWED.zh}完成第二次安全审查：威胁建模（STRIDE 和费用攻击）、对线上网站逐个路由的自动化渗透测试，以及逐个处理程序的代码审查。没有发现严重或高危问题；1 个中危和 3 个低危问题已修复并重新测试，其余风险列在下面。第一次审查（2026 年 10 月 9 日）以登录用户身份，用一个测试后已删除的临时行程测试了 XSS、上传和分享链接。`,
-        `Second security review on ${REVIEWED.en}: a threat model (STRIDE and denial of wallet), an automated penetration test of every route on the live site, and a code review of every handler. There were no Critical or High findings; 1 Medium and 3 Low findings were fixed and re-tested, and the remaining risks are listed below. The first review (9 October 2026) tested XSS, uploads and share links as a signed-in user, with a throwaway travel plan that was deleted afterwards.`,
+        `${REVIEWED.zh}完成第二次安全审查：威胁建模（STRIDE 和费用攻击）、对线上网站逐个路由的自动化渗透测试，以及逐个处理程序的代码审查。没有发现严重或高危问题；2 个中危（其中 1 个由独立审计发现）和 4 个低危问题已修复并重新测试，其余风险列在下面。第一次审查（2026 年 10 月 9 日）以登录用户身份，用一个测试后已删除的临时行程测试了 XSS、上传和分享链接。`,
+        `Second security review on ${REVIEWED.en}: a threat model (STRIDE and denial of wallet), an automated penetration test of every route on the live site, and a code review of every handler. There were no Critical or High findings; 2 Medium (one found by the independent audit) and 4 Low findings were fixed and re-tested, and the remaining risks are listed below. The first review (9 October 2026) tested XSS, uploads and share links as a signed-in user, with a throwaway travel plan that was deleted afterwards.`,
       )),
     );
 
@@ -244,7 +244,7 @@ window.PlanInfo = (() => {
         [t('dliu.com 成员（已登录）', 'dliu.com member (signed in)'), t('查看、创建、编辑、删除所有行程（没有单独的所有者，组织成员彼此信任）', 'See, create, edit and delete every travel plan (there is no per-plan owner; members trust each other)'), t('获得托管 API 权限（需单独分配角色）', 'Use the managed API without the separately assigned role')],
         [t('持分享链接者', 'Share-link holder'), t('查看和编辑一个行程，有每日用量上限', 'See and edit one travel plan, within a daily allowance'), t('列出、新建、删除行程，或打开其他行程', 'List, create or delete travel plans, or open any other one')],
         [t('API 工具（Microsoft 令牌 + api.access 角色）', 'API tool (Microsoft token + api.access role)'), t('按 trip.read / trip.write / trip.delete 权限操作所有行程；读取时得到分享链接', 'Work on every travel plan per its trip.read / trip.write / trip.delete scopes; reading returns the share link'), t('使用网站 Cookie 或分享令牌', 'Use a website cookie or a share token')],
-        [t('令牌被盗', 'Stolen credential'), t('会话 Cookie：最多 30 天；分享令牌：永久（直到行程被删除）；Microsoft 令牌：约 1 小时', 'Session cookie: up to 30 days; share token: permanent (until the plan is deleted); Microsoft token: about an hour'), t('超出该凭据本身的范围', 'Go beyond what that credential allows')],
+        [t('令牌被盗', 'Stolen credential'), t('会话 Cookie：最多 30 天；分享令牌：最多 3 个月，成员可以随时重置；Microsoft 令牌：约 1 小时', 'Session cookie: up to 30 days; share token: up to 3 months, and members can reset it at any time; Microsoft token: about an hour'), t('超出该凭据本身的范围', 'Go beyond what that credential allows')],
         [t('被入侵的依赖包', 'Compromised dependency'), t('API 函数没有任何 npm 依赖；PDF 函数用 pdfkit，只能读表；网页不加载第三方脚本', 'The API function has no npm dependencies; the PDF function uses pdfkit and can only read the table; pages load no third-party scripts'), t('PDF 函数不能写行程或访问附件桶', 'The PDF function cannot change travel plans or reach the files bucket')],
       ]),
     ));
@@ -286,7 +286,7 @@ window.PlanInfo = (() => {
       table([t('组件', 'Component'), 'STRIDE', t('威胁', 'Threat'), t('控制措施', 'Controls'), t('剩余风险', 'Residual')], [
         [t('登录（OIDC）', 'Sign-in (OIDC)'), 'S', t('伪造或重放登录', 'Forged or replayed sign-in'), t('授权码 + PKCE S256、state、nonce，存于 10 分钟的 __Host- Cookie；校验 id_token 签名、签发方、受众和租户；只接受 dliu.com 租户和 @dliu.com 用户名', 'Code flow with PKCE S256, state and nonce in a 10-minute __Host- cookie; the id_token signature, issuer, audience and tenant are checked; only the dliu.com tenant and @dliu.com usernames'), LOW],
         [t('会话 Cookie', 'Session cookie'), 'S · E', t('伪造或盗用会话', 'Forged or stolen session'), t('HMAC-SHA256、HttpOnly、Secure、SameSite=Lax、__Host-；无法在服务端撤销，最长 30 天', 'HMAC-SHA256, HttpOnly, Secure, SameSite=Lax, __Host-; cannot be revoked on the server, lasts up to 30 days'), LOW],
-        [t('分享链接', 'Share links'), 'I · E', t('猜测、泄露或用到别的行程', 'Guessed, leaked, or used on another plan'), t('144 位随机令牌，常数时间比较；只对一个行程有效，不能列出或删除行程；不存在和无权限的行程得到相同的拒绝；链接永久有效、不能重置', '144-bit random token compared in constant time; works for one plan only and cannot list or delete plans; missing and forbidden plans get the same refusal; links are permanent and cannot be reset'), MEDIUM],
+        [t('分享链接', 'Share links'), 'I · E', t('猜测、泄露或用到别的行程', 'Guessed, leaked, or used on another plan'), t('144 位随机令牌，常数时间比较；只对一个行程有效，不能列出或删除行程；不存在和无权限的行程得到相同的拒绝；链接 3 个月后失效，成员可以随时重置（本次修复）', '144-bit random token compared in constant time; works for one plan only and cannot list or delete plans; missing and forbidden plans get the same refusal; links expire after 3 months and members can reset them (fixed in this review)'), LOW],
         [t('网站 API', 'Website API'), 'T', t('CSRF 或注入', 'CSRF or injection'), t('写请求要求本站 Origin 和 JSON；编号按正则检查；DynamoDB 使用类型化参数，不拼接查询；界面只用 textContent 显示', 'Writes need this site’s Origin and JSON; ids are checked against patterns; DynamoDB uses typed parameters, never built queries; the UI only uses textContent'), LOW],
         [t('网站 API', 'Website API'), 'R', t('否认做过的修改', 'Denying a change'), t('每个行程记录最后修改人和时间；不记录读取', 'Each plan records its last editor and time; reads are not logged'), LOW],
         [t('API 与 PDF 函数', 'API and PDF functions'), 'I', t('错误信息或日志泄露', 'Leaks through errors or logs'), t('客户端只看到通用错误，没有堆栈；日志里的分享令牌和用户名已去除（本次修复）', 'Clients get generic errors without stacks; share tokens and usernames are kept out of the logs (fixed in this review)'), LOW],
@@ -314,13 +314,14 @@ window.PlanInfo = (() => {
     page.append(section(t(`本次审查的发现（${REVIEWED.zh}）`, `Findings (${REVIEWED.en})`),
       table(['ID', t('严重程度', 'Severity'), t('发现', 'Finding'), t('状态', 'Status')], [
         ['M1', MEDIUM, t('托管 API 没有限流：持有本租户令牌的调用方可以刷请求，让共用的 Lambda 排队（无令牌的请求本来就在授权器被拒绝）', 'The managed API had no throttling: a caller with a token from your tenant could flood it and queue up the shared Lambda (requests without a token were already refused by the authoriser)'), FIXED],
+        ['M3', MEDIUM, t('分享链接永久有效且不能重置，而只有 trip.read 权限的 API 调用方也会拿到可编辑的 shareUrl：读取权限变成永久的编辑权限（独立审计发现）。现在链接 3 个月后失效，成员可以随时重置', 'Share links never expired and could not be reset, yet API callers with only trip.read got the editable shareUrl, so read access became permanent edit access (found by the independent audit). Links now expire after 3 months and members can reset them'), FIXED],
         ['L2', LOW, t('出错时，/api/shared/<令牌> 的完整路径会写入错误日志', 'On an error, the full /api/shared/<token> path was written to the error log'), FIXED],
         ['L6', LOW, t('“域名不允许”的警告记录了用户名', 'The “domain not allowed” warning logged the username'), FIXED],
         ['L7', LOW, t('每次调用写 3 行平台日志，刷流量时增加日志费用', 'Every call wrote 3 platform log lines, adding log charges during a flood'), FIXED],
+        ['L5', LOW, t('部署用的自定义资源日志组永不过期（只有部署日志）。现在每个日志组都由堆栈管理，保留 3 个月', 'Deploy-time custom-resource log groups never expired (deployment logs only). Every log group is now stack-managed and kept 3 months'), FIXED],
         ['L1', LOW, t('分享令牌在网址中，会进入浏览器历史和私有访问日志', 'Share tokens are in URLs, so they reach browser history and the private access logs'), ACCEPTED],
         ['L3', LOW, t('会话无法在服务端撤销（最长 30 天）', 'Sessions cannot be revoked on the server (up to 30 days)'), ACCEPTED],
-        ['L4', LOW, t('分享链接永久有效且不能重置；trip.read 会返回 shareUrl', 'Share links never expire and cannot be reset; trip.read returns shareUrl'), ACCEPTED],
-        ['L5', LOW, t('部署用的自定义资源日志组永不过期（只有部署日志）', 'Deploy-time custom-resource log groups never expire (deployment logs only)'), ACCEPTED],
+        ['L4', LOW, t('只有 trip.read 权限的 API 调用方仍会拿到可编辑的 shareUrl（所有者决定：API 工具都同时有读写权限）', 'API callers with only trip.read still get the editable shareUrl (the owner’s decision: API tools are always given read and write)'), ACCEPTED],
       ]),
     ));
 
@@ -378,12 +379,12 @@ window.PlanInfo = (() => {
       t('npm audit：lambda/api 没有依赖；lambda/pdf 生产依赖 0 个问题；根目录生产依赖 2 个中危（aws-cdk-lib 内置的 minimatch，只在部署时运行，暂无修复）；开发依赖 22 个（4 低、18 中），都在 Jest 工具链，不会部署。', 'npm audit: lambda/api has no dependencies; lambda/pdf production: 0; root production: 2 moderate (minimatch bundled in aws-cdk-lib, only runs at deploy time, no fix yet); root development: 22 (4 low, 18 moderate), all in the Jest tool chain and never deployed.'),
       t('IAM：每个函数只拿到自己需要的表、桶和参数（见下方“防护细节”）。', 'IAM: each function only gets the table, bucket and parameters it needs (see Control details below).'),
       t('存储：两个桶都阻止所有公开访问、SSE-S3 加密、禁用 ACL、拒绝非 TLS 请求；站点桶只允许这个 CloudFront 分发读取。DynamoDB 使用 AWS 托管密钥加密，开启删除保护和时间点恢复。', 'Storage: both buckets block all public access, use SSE-S3 encryption, disable ACLs and refuse non-TLS requests; the site bucket only lets this CloudFront distribution read it. DynamoDB is encrypted with an AWS-owned key and has deletion protection and point-in-time recovery.'),
-      t('日志：保留 30 天，JSON 格式，只记录警告和错误；不记录分享令牌、用户名或请求内容。', 'Logs: kept 30 days, JSON, warnings and errors only; no share tokens, usernames or request bodies.'),
+      t('日志：所有日志组（包括 CDK 的部署辅助函数）保留 3 个月（90 天），JSON 格式，只记录警告和错误；不记录分享令牌、用户名或请求内容。', 'Logs: every log group, including CDK’s deployment helper functions, is kept 3 months (90 days); JSON, warnings and errors only; no share tokens, usernames or request bodies.'),
       t('测试：Jest 覆盖登录、会话、CSRF、分享令牌、托管 API 的令牌声明、上传签名、日志脱敏，以及堆栈里的限流、日志保留、响应头和改写规则；每个修复都有回归测试。', 'Tests: Jest covers sign-in, sessions, CSRF, share tokens, managed API token claims, upload signing and log redaction, plus the stack’s throttling, log retention, headers and rewrites; every fix has a regression test.'),
     ])));
 
     page.append(section(t('已接受的风险', 'Accepted residual risks'), list([
-      t('持分享链接的人可以编辑或删除安排、添加链接和上传文件；链接永久有效，不能重置。只把链接发给信任的人。', 'Anyone with a share link can edit or delete events, add links and upload files, and links never expire or reset. Only send links to people you trust.'),
+      t('持分享链接的人可以编辑或删除安排、添加链接和上传文件，直到链接过期（3 个月）或被成员重置。只把链接发给信任的人。', 'Anyone with a share link can edit or delete events, add links and upload files until the link expires (3 months) or a member resets it. Only send links to people you trust.'),
       t('令牌在网址中，会出现在浏览器历史和私有的 CloudFront/TrafficMonitor 访问日志里。', 'Tokens are in the URL, so they appear in browser history and in the private CloudFront and TrafficMonitor access logs.'),
       t('没有 WAF：CloudFront 和 API Gateway 的请求费没有硬上限（见“运行成本”）。加 WAF 需要所有者决定。下载链接在 5 分钟内可重复使用。', 'There is no WAF, so CloudFront and API Gateway request charges have no hard cap (see Cost); adding one is the owner’s decision. A download link can be reused for 5 minutes.'),
       t('附件没有病毒扫描；附件桶没有版本控制，被访客覆盖或删除的附件无法恢复。', 'Attachments are not virus-scanned, and the files bucket has no versioning, so an attachment a guest replaces or deletes cannot be recovered.'),
@@ -402,7 +403,7 @@ window.PlanInfo = (() => {
       t('写请求：Origin 必须是 https://plan.dliu.com，类型必须是 application/json，请求体不超过 64 KB', 'Writes: Origin must be https://plan.dliu.com, the type application/json and the body at most 64 KB'),
       t('托管 API：API Gateway JWT 授权器；默认阶段每秒 10 个、突发 20 个', 'Managed API: API Gateway JWT authoriser; default stage limited to 10 requests a second, bursts of 20'),
       t('附件：上传签名 15 分钟并锁定大小和类型；下载签名 5 分钟；只有图片、PDF、纯文本、音视频可在浏览器内打开', 'Attachments: upload URLs last 15 minutes and fix the size and type; download URLs last 5 minutes; only images, PDF, plain text, audio and video open in the browser'),
-      t('Lambda：保留并发 20；IAM 只允许读写本表、本桶和 /travel-plan/ 参数；JSON 日志，只记录警告和错误，保留 30 天', 'Lambda: reserved concurrency of 20; IAM only allows this table, this bucket and the /travel-plan/ parameters; JSON logs, warnings and errors only, kept 30 days'),
+      t('Lambda：保留并发 20；IAM 只允许读写本表、本桶和 /travel-plan/ 参数；JSON 日志，只记录警告和错误，保留 3 个月', 'Lambda: reserved concurrency of 20; IAM only allows this table, this bucket and the /travel-plan/ parameters; JSON logs, warnings and errors only, kept 3 months'),
       t('PDF 导出：保留并发 5，只能读本表和 /travel-plan/ 参数，不能访问附件桶；只接受 GET；用户文字以纯文本排版，链接只保留 http(s)；PDF 不缓存', 'PDF export: reserved concurrency of 5; can only read this table and the /travel-plan/ parameters, not the files bucket; GET only; user text is laid out as plain text and only http(s) links are kept; PDFs are never cached'),
     ])));
 

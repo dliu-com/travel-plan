@@ -14,7 +14,7 @@ The managed API accepts Microsoft-issued user access tokens. It can list and rea
 4. Managed requests do not need `Origin`, website cookies, `x-plan-token` or `x-amz-content-sha256`.
 5. Request only user-authorized operations. Do not run write or delete examples just to check a token. `PUT` replaces every field of a plan or event: read the current object first and send it back with only the intended changes. There is no ETag or conditional update; serialize changes to the same plan.
 6. Treat presigned storage URLs (`url`, `uploadUrl`) as credentials: never print, share, log or save them. Use them without the bearer token. The API never redirects; do not follow redirects with credentials.
-7. Every plan has a share link, returned as `shareUrl` when you read a plan. To see a plan the way people see it, open that link in a browser (see [Viewing a plan](#viewing-a-plan)). The link is a long-lived credential: give it only to the user, and never post or log it anywhere else.
+7. Every plan has a share link, returned as `shareUrl` when you read a plan. To see a plan the way people see it, open that link in a browser (see [Viewing a plan](#viewing-a-plan)). The link works for 3 months (`shareExpiresAt`) and is a credential: give it only to the user, and never post or log it anywhere else.
 8. Errors come from either the gateway (`{"message":"..."}`) or the travel plan functions (`{"error":"..."}`).
 
 ## Endpoint summary
@@ -36,7 +36,7 @@ The managed API accepts Microsoft-issued user access tokens. It can list and rea
 | [DELETE /api/trips/{tripId}/files/{fileId}](#delete-api-trips-tripid-files-fileid) | `trip.delete` | Delete an attachment |
 | [GET /api/trips/{tripId}/pdf](#get-api-trips-tripid-pdf) | `trip.read` | Export the plan as a PDF |
 
-`trip.write` does not include `trip.delete`: every DELETE needs `trip.delete`. Every plan has a share link, and reading a plan returns it as `shareUrl` (needs `trip.read`); links are not created or turned off separately. `/api/shared/*` is not published here, and the bare `shareToken` is never returned. There is no PATCH, sign-in or token-management route.
+`trip.write` does not include `trip.delete`: every DELETE needs `trip.delete`. Every plan has a share link, and reading a plan returns it as `shareUrl` (needs `trip.read`). A link works for 3 months; after that `shareUrl` is `null` until a signed-in member creates a new one on the website. Links can't be created or reset through this API. `/api/shared/*` is not published here, and the bare `shareToken` is never returned. There is no PATCH, sign-in or token-management route.
 
 ## Authentication and access
 
@@ -119,7 +119,8 @@ Returned by the trip, event and file routes:
   ],
   "updatedAt": "2026-10-01T12:00:00.000Z",
   "updatedBy": "Dewei Liu",
-  "shareUrl": "https://plan.dliu.com/plan/20261001?token=…"
+  "shareUrl": "https://plan.dliu.com/plan/20261001?token=…",
+  "shareExpiresAt": "2027-01-01T12:00:00.000Z"
 }
 ```
 
@@ -129,7 +130,8 @@ Returned by the trip, event and file routes:
 | `events` | Sorted by date (undated last), then all-day events, then time. `endTime` appears only when set |
 | `status` | One of `confirmed`, `planned`, `proposed`, `option`, or empty |
 | `files` | Attachments belong to the plan, not to events |
-| `shareUrl` | The plan's share link: anyone holding it can view and edit this one plan in a browser without signing in. Treat it as a credential |
+| `shareUrl` | The plan's share link: anyone holding it can view and edit this one plan in a browser without signing in. Treat it as a credential. `null` once the link has expired |
+| `shareExpiresAt` | When the share link stops working: 3 months after it was made or reset. Empty for links made before links expired, until a member opens the plan |
 
 ### Trip input
 
@@ -247,7 +249,7 @@ To check how a plan looks, for example after changing it, open its `shareUrl` in
 - Use the link only to look. The page is editable for anyone holding the link, so do not click or type in it; make changes through this API instead.
 - Use a normal browser. Link-preview bots (WhatsApp, Slack, Telegram and similar user agents) get an empty page with only the title.
 - Each look counts toward the plan's daily share-link allowance (5,000 requests a day per plan); API calls do not.
-- The link does not expire and cannot be turned off. Show it only to the user who asked; never put it in public places, logs, commits or third-party services.
+- The link works until `shareExpiresAt` (3 months after it was made); members can also reset it on the website, which stops the old one at once. If `shareUrl` is `null`, the link has expired: ask the user to open the plan on the website and choose *Create link*. Show the link only to the user who asked; never put it in public places, logs, commits or third-party services.
 - For a file instead of a page, use [GET /api/trips/{tripId}/pdf](#get-api-trips-tripid-pdf).
 
 ## Errors

@@ -156,10 +156,64 @@ describe('share links', () => {
     expect((await call('PUT', `/api/trips/${trip.id}/events/${added.json.eventId}`, { ...guest, body: { title: 'Nara deer' } })).statusCode).toBe(200);
     expect((await call('DELETE', `/api/trips/${trip.id}/events/${added.json.eventId}`, guest)).statusCode).toBe(200);
 
-    // Links are not created or turned off separately: the old share routes are gone.
-    expect((await call('POST', `/api/trips/${trip.id}/share`)).statusCode).toBe(405);
+    // Links can't be turned off, only replaced (see below).
     expect((await call('DELETE', `/api/trips/${trip.id}/share`)).statusCode).toBe(405);
     expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(200);
+  });
+
+  test('a link works for 3 months, then a member creates a new one', async () => {
+    const { call, store } = setup();
+    const { trip, token } = await sharedTrip(call);
+    // NOW is 1 October 2026.
+    expect(trip.shareExpiresAt).toBe('2027-01-01T00:00:00.000Z');
+    const guest = { signedIn: false, token };
+    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(200);
+
+    store.trips.get(trip.id).shareExpiresAt = '2026-09-30T23:59:59.000Z';
+    for (const request of [['GET', `/api/trips/${trip.id}`], ['GET', `/api/trips/${trip.id}?token=${token}`], ['PUT', `/api/trips/${trip.id}`, { body: { title: 'x' } }]]) {
+      const res = await call(request[0], request[1], { signedIn: false, token: request[1].includes('?') ? undefined : token, ...request[2] });
+      expect(res.statusCode).toBe(403);
+    }
+    expect((await call('GET', `/api/shared/${token}`, { signedIn: false })).statusCode).toBe(404);
+    // Members see no link (the page offers "Create link"); opening or listing the plan does not renew it.
+    expect((await call('GET', `/api/trips/${trip.id}`)).json).toMatchObject({ shareToken: '', shareExpiresAt: '2026-09-30T23:59:59.000Z' });
+    await call('GET', '/api/trips');
+    expect(store.trips.get(trip.id).shareToken).toBe(token);
+
+    // Only a signed-in member can create the new link, through this site.
+    expect((await call('POST', `/api/trips/${trip.id}/share`, { signedIn: false })).statusCode).toBe(401);
+    expect((await call('POST', `/api/trips/${trip.id}/share`, { origin: 'https://evil.example' })).statusCode).toBe(403);
+    const created = await call('POST', `/api/trips/${trip.id}/share`);
+    expect(created.statusCode).toBe(200);
+    expect(created.json.shareToken).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(created.json.shareToken).not.toBe(token);
+    expect(created.json.shareExpiresAt).toBe('2027-01-01T00:00:00.000Z');
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token: created.json.shareToken })).statusCode).toBe(200);
+    expect((await call('GET', `/api/trips/${trip.id}`, guest)).statusCode).toBe(403);
+  });
+
+  test('Reset link replaces a live link at once; guests cannot reset it', async () => {
+    const { call } = setup();
+    const { trip, token } = await sharedTrip(call);
+    expect((await call('POST', `/api/trips/${trip.id}/share`, { signedIn: false, token })).statusCode).toBe(403);
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token })).statusCode).toBe(200);
+    const reset = await call('POST', `/api/trips/${trip.id}/share`);
+    expect(reset.json.shareToken).not.toBe(token);
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token })).statusCode).toBe(403);
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token: reset.json.shareToken })).statusCode).toBe(200);
+  });
+
+  test('links made before links expired keep working and get their 3 months when a member opens the plan', async () => {
+    const { call, store } = setup();
+    const { trip, token } = await sharedTrip(call);
+    delete store.trips.get(trip.id).shareExpiresAt;
+    expect((await call('GET', `/api/trips/${trip.id}`, { signedIn: false, token })).statusCode).toBe(200);
+    expect(store.trips.get(trip.id).shareExpiresAt).toBeUndefined();
+    const opened = await call('GET', `/api/trips/${trip.id}`);
+    expect(opened.json).toMatchObject({ shareToken: token, shareExpiresAt: '2027-01-01T00:00:00.000Z' });
+    delete store.trips.get(trip.id).shareExpiresAt;
+    await call('GET', '/api/trips');
+    expect(store.trips.get(trip.id)).toMatchObject({ shareToken: token, shareExpiresAt: '2027-01-01T00:00:00.000Z' });
   });
 
   test('plans made before every plan had a link get one when a member opens them', async () => {

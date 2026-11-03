@@ -2,7 +2,7 @@
 
 // In-memory stand-in for lambda/api/store.js, used by the tests and the local dev server.
 const { NotFound, TooLarge } = require('../lambda/api/store');
-const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId } = require('../lambda/api/trips');
+const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId, shareExpiry, shareLinkExpired } = require('../lambda/api/trips');
 
 function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
   const trips = new Map();
@@ -24,7 +24,7 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
       return clone(trips.get(id) || null);
     },
     async getSharedTrip(token) {
-      return clone([...trips.values()].find((trip) => trip.shareToken === token) || null);
+      return clone([...trips.values()].find((trip) => trip.shareToken === token && !shareLinkExpired(trip, now())) || null);
     },
     async sharedTripId(token) {
       const trip = [...trips.values()].find((item) => item.shareToken === token);
@@ -40,14 +40,19 @@ function createMemoryStore({ now = () => new Date().toISOString() } = {}) {
     },
     async ensureShareLink(id) {
       const trip = need(id);
-      trip.shareToken = trip.shareToken || newShareToken();
+      const at = now();
+      if (!trip.shareToken) Object.assign(trip, { shareToken: newShareToken(), shareExpiresAt: shareExpiry(at) });
+      else if (!trip.shareExpiresAt) trip.shareExpiresAt = shareExpiry(at);
       return clone(trip);
+    },
+    async resetShareLink(id) {
+      return clone(Object.assign(need(id), { shareToken: newShareToken(), shareExpiresAt: shareExpiry(now()) }));
     },
     async createTrip(fields, user) {
       const at = now();
       const id = nextTripId(trips.keys(), at);
       if (!id) throw new TooLarge('Too many trips this month');
-      const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), createdAt: at, updatedAt: at, updatedBy: user };
+      const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), shareExpiresAt: shareExpiry(at), createdAt: at, updatedAt: at, updatedBy: user };
       trips.set(item.id, item);
       return clone(item);
     },

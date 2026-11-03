@@ -1,9 +1,22 @@
 'use strict';
 
 const {
-  BadRequest, SHARE_TOKEN, TRIP_ID, compareEvents, compareSummaries, newShareToken, nextTripId, newFileId, FILE_ID, parseUpload, parseFileUpdate,
+  BadRequest, SHARE_TOKEN, TRIP_ID, shareExpiry, shareLinkExpired, compareEvents, compareSummaries, newShareToken, nextTripId, newFileId, FILE_ID, parseUpload, parseFileUpdate,
   parseEvent, parseTrip, toApiTrip, toSharedTrip, toSummary,
 } = require('../lambda/api/trips');
+
+describe('share link expiry', () => {
+  test('is 3 calendar months later, clamped to the end of a shorter month', () => {
+    expect(shareExpiry('2026-10-01T00:00:00.000Z')).toBe('2027-01-01T00:00:00.000Z');
+    expect(shareExpiry('2026-11-30T12:00:00.000Z')).toBe('2027-02-28T12:00:00.000Z');
+    expect(shareExpiry('2027-05-31T00:00:00.000Z')).toBe('2027-08-31T00:00:00.000Z');
+  });
+  test('a link expires at its time; links without an expiry do not', () => {
+    expect(shareLinkExpired({ shareExpiresAt: '2027-01-01T00:00:00.000Z' }, '2026-12-31T23:59:59.999Z')).toBe(false);
+    expect(shareLinkExpired({ shareExpiresAt: '2027-01-01T00:00:00.000Z' }, '2027-01-01T00:00:00.000Z')).toBe(true);
+    expect(shareLinkExpired({}, '2099-01-01T00:00:00.000Z')).toBe(false);
+  });
+});
 
 describe('parseTrip', () => {
   test('cleans and accepts a valid trip', () => {

@@ -18,6 +18,7 @@ import {
   aws_s3_deployment as s3deploy,
   aws_ssm as ssm,
   CfnOutput,
+  CfnResource,
   Duration,
   Fn,
   RemovalPolicy,
@@ -27,6 +28,7 @@ import {
 import apiRoutes from '../lambda/api/routes.json';
 
 const ROOT = path.join(__dirname, '..');
+const LOG_RETENTION = logs.RetentionDays.THREE_MONTHS;
 
 export const PARAMETER_PREFIX = '/travel-plan';
 /** Managed API stage throttling, requests per second and burst, shared by every caller. */
@@ -177,7 +179,7 @@ export class TravelPlanStack extends Stack {
       },
       ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'ApiLogs', {
-        retention: logs.RetentionDays.ONE_MONTH,
+        retention: LOG_RETENTION,
         removalPolicy: RemovalPolicy.DESTROY,
       }),
     });
@@ -220,7 +222,7 @@ export class TravelPlanStack extends Stack {
       },
       ...QUIET_LOGS,
       logGroup: new logs.LogGroup(this, 'PdfLogs', {
-        retention: logs.RetentionDays.ONE_MONTH,
+        retention: LOG_RETENTION,
         removalPolicy: RemovalPolicy.DESTROY,
       }),
     });
@@ -438,5 +440,23 @@ export class TravelPlanStack extends Stack {
     new CfnOutput(this, 'FilesBucketName', { value: filesBucket.bucketName });
     new CfnOutput(this, 'ApiFunctionName', { value: apiHandler.functionName });
     new CfnOutput(this, 'PdfFunctionName', { value: pdfHandler.functionName });
+
+    this.keepHelperLogs();
+  }
+
+  // CDK's own helper Lambdas (bucket deployment, auto-delete, certificate requestor) would otherwise log to
+  // auto-created groups that never expire, so each gets a stack-managed group with the same retention.
+  private keepHelperLogs() {
+    const functions = this.node.findAll().filter((c): c is CfnResource =>
+      c instanceof CfnResource && c.cfnResourceType === 'AWS::Lambda::Function');
+    for (const fn of functions) {
+      if (fn instanceof lambda.CfnFunction && (fn.loggingConfig as lambda.CfnFunction.LoggingConfigProperty | undefined)?.logGroup) continue;
+      const group = new logs.LogGroup(this, `${fn.node.path.split('/').slice(1).join('')}Logs`, {
+        retention: LOG_RETENTION,
+        removalPolicy: RemovalPolicy.DESTROY,
+      });
+      fn.addPropertyOverride('LoggingConfig.LogGroup', group.logGroupName);
+      fn.node.addDependency(group);
+    }
   }
 }

@@ -348,6 +348,18 @@ describe('managed API', () => {
     expect((await website('GET', `/api/trips/${trip.id}`, { signedIn: false, token: shareToken })).statusCode).toBe(200);
   });
 
+  test('an expired link is not returned, and the API cannot create one', async () => {
+    const { managed, website, store } = setup();
+    const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;
+    expect((await managed('GET', `/api/trips/${trip.id}`)).json.shareExpiresAt).toBe('2027-01-01T00:00:00.000Z');
+    store.trips.get(trip.id).shareExpiresAt = '2026-09-01T00:00:00.000Z';
+    const read = await managed('GET', `/api/trips/${trip.id}`);
+    expect(read.json.shareUrl).toBeNull();
+    expect(read.body).not.toContain(trip.shareToken);
+    expect((await managed('POST', `/api/trips/${trip.id}/share`)).statusCode).toBe(404);
+    expect(store.trips.get(trip.id).shareToken).toBe(trip.shareToken);
+  });
+
   test('a plan made before every plan had a link gets one when the API reads it', async () => {
     const { managed, website, store } = setup();
     const trip = (await website('POST', '/api/trips', { body: { title: 'Kyoto' } })).json;

@@ -305,7 +305,7 @@ test('static files are edge-cached for a day, HTML shells are never cached long'
   }
 });
 
-test('both functions log JSON without per-call platform lines, kept for a month', () => {
+test('both functions log JSON without per-call platform lines, kept for three months', () => {
   const functions = Object.values(template.findResources('AWS::Lambda::Function'))
     .map((r: any) => r.Properties).filter((p: any) => /plan\.dliu\.com/.test(p.Description || ''));
   expect(functions).toHaveLength(2);
@@ -314,5 +314,16 @@ test('both functions log JSON without per-call platform lines, kept for a month'
   }
   const retention = Object.values(template.findResources('AWS::Logs::LogGroup')).map((r: any) => r.Properties.RetentionInDays);
   expect(retention.length).toBeGreaterThanOrEqual(2);
-  for (const days of retention) expect(days).toBe(30);
+  for (const days of retention) expect(days).toBe(90);
+});
+
+test('every Lambda, including CDK helpers, logs to a stack-managed group kept for three months', () => {
+  const groups = template.findResources('AWS::Logs::LogGroup');
+  const functions = Object.entries(template.findResources('AWS::Lambda::Function'));
+  expect(functions.length).toBeGreaterThanOrEqual(5);
+  for (const [id, fn] of functions as [string, any][]) {
+    const ref = fn.Properties.LoggingConfig?.LogGroup?.Ref;
+    expect({ id, group: ref && groups[ref] ? 'managed' : ref }).toEqual({ id, group: 'managed' });
+    expect(groups[ref].Properties.RetentionInDays).toBe(90);
+  }
 });

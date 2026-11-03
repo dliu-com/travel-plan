@@ -9,7 +9,7 @@ const { createFiles } = require('./s3');
 const { createStore, NotFound, TooLarge } = require('./store');
 const {
   BadRequest, EVENT_ID, FILE_ID, MAX_FILES, SHARE_TOKEN, TRIP_ID, compareSummaries, newFileId,
-  parseEvent, parseFileUpdate, parseTrip, parseUpload, toApiTrip, toSummary,
+  parseEvent, parseFileUpdate, parseTrip, parseUpload, shareLinkExpired, shareLinkNeedsUpdate, toApiTrip, toSummary,
 } = require('./trips');
 
 const SECURITY_HEADERS = {
@@ -20,10 +20,15 @@ const MAX_BODY_BYTES = 64 * 1024;
 const DOWNLOAD_SECONDS = 5 * 60;
 
 // Managed API callers get the plan's share link as a ready-to-open address (the website's view of the plan),
-// not the bare token.
+// not the bare token; null once it has expired.
 function managedTrip(trip) {
   const { shareToken, ...rest } = trip;
   return { ...rest, shareUrl: shareToken ? `${process.env.SITE_URL}/plan/${trip.id}?token=${shareToken}` : null };
+}
+
+// An expired link is no use to anyone, so it isn't returned: the page shows "Create link" instead.
+function liveLink(trip, nowIso) {
+  return shareLinkExpired(trip, nowIso) ? { ...trip, shareToken: '' } : trip;
 }
 
 function json(statusCode, body, cookies) {
@@ -88,7 +93,10 @@ function createHandler(deps = {}) {
 
   async function api(method, parts, event) {
     const managed = isManaged(event);
-    const view = (item) => (managed ? managedTrip(toApiTrip(item)) : toApiTrip(item));
+    const view = (item) => {
+      const trip = liveLink(toApiTrip(item), new Date(clock()).toISOString());
+      return managed ? managedTrip(trip) : trip;
+    };
     // /api/me
     if (parts.length === 1 && parts[0] === 'me' && method === 'GET') {
       if (managed) {
@@ -133,8 +141,8 @@ function createHandler(deps = {}) {
       membersOnly();
       if (method === 'GET') {
         const items = await store.listTrips();
-        // Every plan has a share link; plans made before that get theirs here.
-        await Promise.all(items.filter((item) => !item.shareToken).map((item) => store.ensureShareLink(item.id)));
+        // Plans made before every plan had a link, or before links expired, are brought up to date here.
+        await Promise.all(items.filter(shareLinkNeedsUpdate).map((item) => store.ensureShareLink(item.id)));
         const trips = items.map(toSummary).sort(compareSummaries);
         return json(200, { trips });
       }
@@ -143,7 +151,7 @@ function createHandler(deps = {}) {
     if (parts.length === 2) {
       if (method === 'GET') {
         const item = await getTrip(tripId);
-        return json(200, view(member && !item.shareToken ? await store.ensureShareLink(tripId) : item));
+        return json(200, view(member && shareLinkNeedsUpdate(item) ? await store.ensureShareLink(tripId) : item));
       }
       if (method === 'PUT') {
         const fields = parseTrip(readBody(event));
@@ -156,6 +164,11 @@ function createHandler(deps = {}) {
         await files.removeTrip(tripId);
         return json(200, { deleted: tripId });
       }
+    }
+    // "Create link" once the old one expired, or "Reset link": website members only (the managed API has no such route).
+    if (sub === 'share' && parts.length === 3 && method === 'POST') {
+      membersOnly();
+      return json(200, view(await store.resetShareLink(tripId)));
     }
     if (sub === 'events') {
       if (parts.length === 3 && method === 'POST') {

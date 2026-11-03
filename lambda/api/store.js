@@ -1,6 +1,6 @@
 'use strict';
 
-const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId } = require('./trips');
+const { MAX_EVENTS, MAX_FILES, newEventId, newShareToken, nextTripId, shareExpiry, shareLinkExpired } = require('./trips');
 
 const SHARE_INDEX = 'byShareToken';
 
@@ -45,7 +45,7 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
       do {
         const page = await send(new lib.ScanCommand({
           TableName: table,
-          ProjectionExpression: 'id, title, destination, startDate, endDate, intro, shareToken, updatedAt',
+          ProjectionExpression: 'id, title, destination, startDate, endDate, intro, shareToken, shareExpiresAt, updatedAt',
           ExclusiveStartKey,
         }));
         items.push(...(page.Items || []));
@@ -79,7 +79,7 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
       const id = await this.sharedTripId(token);
       if (!id) return null;
       const item = await this.getTrip(id);
-      return item && item.shareToken === token ? item : null;
+      return item && item.shareToken === token && !shareLinkExpired(item, now()) ? item : null;
     },
 
     // Add amounts to a usage row (created on first use) unless a counter would go past its limit;
@@ -106,14 +106,45 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
       }
     },
 
-    // Gives a plan made before every plan had a share link its link. Not an edit, so updatedAt/By stay as they are.
+    // Gives a plan made before every plan had a link its link, and a link made before links expired its 3 months
+    // from now. Expired links are left alone (a member creates a new one). Not an edit, so updatedAt/By stay as
+    // they are. Conditional, so two members opening the plan at once end up with the same link.
     async ensureShareLink(id) {
+      const at = now();
+      const attempts = [
+        {
+          ConditionExpression: 'attribute_exists(id) AND attribute_not_exists(shareToken)',
+          UpdateExpression: 'SET shareToken = :t, shareExpiresAt = :e',
+          ExpressionAttributeValues: { ':t': newShareToken(), ':e': shareExpiry(at) },
+        },
+        {
+          ConditionExpression: 'attribute_exists(shareToken) AND attribute_not_exists(shareExpiresAt)',
+          UpdateExpression: 'SET shareExpiresAt = :e',
+          ExpressionAttributeValues: { ':e': shareExpiry(at) },
+        },
+      ];
+      for (const attempt of attempts) {
+        try {
+          const result = await send(new lib.UpdateCommand({ TableName: table, Key: { id }, ...attempt, ReturnValues: 'ALL_NEW' }));
+          return result.Attributes;
+        } catch (error) {
+          if (!isConditionFailure(error)) throw error;
+        }
+      }
+      const item = await this.getTrip(id);
+      if (!item) throw new NotFound('Travel plan not found');
+      return item;
+    },
+
+    // A member's "Create link" (after the old one expired) or "Reset link": a new token for 3 months; the old link
+    // stops working at once.
+    async resetShareLink(id) {
       const result = await write(new lib.UpdateCommand({
         TableName: table,
         Key: { id },
         ConditionExpression: 'attribute_exists(id)',
-        UpdateExpression: 'SET shareToken = if_not_exists(shareToken, :t)',
-        ExpressionAttributeValues: { ':t': newShareToken() },
+        UpdateExpression: 'SET shareToken = :t, shareExpiresAt = :e',
+        ExpressionAttributeValues: { ':t': newShareToken(), ':e': shareExpiry(now()) },
         ReturnValues: 'ALL_NEW',
       }));
       return result.Attributes;
@@ -137,7 +168,7 @@ function createStore({ client, table = process.env.TABLE_NAME, limitsTable = pro
         const id = nextTripId(await this.tripIds(), at);
         if (!id) throw new TooLarge('Too many travel plans this month');
         // Every plan has a share link from the start.
-        const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), createdAt: at, updatedAt: at, updatedBy: user };
+        const item = { id, ...fields, events: {}, files: {}, shareToken: newShareToken(), shareExpiresAt: shareExpiry(at), createdAt: at, updatedAt: at, updatedBy: user };
         try {
           await send(new lib.PutCommand({ TableName: table, Item: item, ConditionExpression: 'attribute_not_exists(id)' }));
           return item;

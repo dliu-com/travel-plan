@@ -905,16 +905,48 @@
   });
 
   // Sharing lives in the Sharing row of the plan header. Guests (share link) only get the PDF.
+  // A link works for 3 months; after that the server stops returning it and members create a new one.
   function sharePanel(trip) {
     if (isGuest()) return el('div', { class: 'share row' }, [pdfButton(trip)]);
-    const note = el('p', {
-      class: 'share-note',
-      text: t('打开分享链接无需登录', 'No sign-in needed to open the share link'),
-    });
+    if (!trip.shareToken) {
+      return el('div', { class: 'share-panel' }, [
+        el('div', { class: 'share row' }, [
+          el('button', { type: 'button', class: 'dl-button dl-button-primary dl-button-small', text: t('创建链接', 'Create link'), title: LINK_HINT(), onclick: (e) => newShareLink(trip, e.currentTarget) }),
+          pdfButton(trip),
+        ]),
+        el('p', { class: 'share-note', text: t('分享链接已过期。新链接有效期 3 个月。', 'The share link has expired. A new link works for 3 months.') }),
+      ]);
+    }
+    const until = trip.shareExpiresAt ? fmt(trip.shareExpiresAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const note = el('p', { class: 'share-note' }, [
+      until
+        ? t(`打开分享链接无需登录，有效期至 ${until}。`, `No sign-in needed to open the share link. It works until ${until}. `)
+        : t('打开分享链接无需登录。', 'No sign-in needed to open the share link. '),
+      el('button', {
+        type: 'button',
+        class: 'dl-button dl-button-link',
+        text: t('重置链接', 'Reset link'),
+        title: t('换一个新链接（有效期 3 个月），旧链接立即失效', 'Replace the link with a new one for 3 months; the old link stops working at once'),
+        onclick: (e) => {
+          if (confirm(t('重置分享链接？旧链接将立即失效，需要把新链接发给朋友。', 'Reset the share link? The old link stops working at once, and you’ll need to send the new one to your friends.'))) newShareLink(trip, e.currentTarget);
+        },
+      }),
+    ]);
     return el('div', { class: 'share-panel' }, [shareButtons(trip), note]);
   }
 
-  // Every plan has a share link, so there is nothing to create or turn off.
+  async function newShareLink(trip, button) {
+    button.disabled = true;
+    try {
+      state.trip = await api('POST', `/api/trips/${trip.id}/share`);
+      rerender();
+      setStatus(t('新链接已创建，有效期 3 个月。', 'New link ready. It works for 3 months.'));
+    } catch (error) {
+      button.disabled = false;
+      setStatus(error.message, true);
+    }
+  }
+
   function shareButtons(trip) {
     const copyLabel = t('复制链接', 'Copy link');
     return el('div', { class: 'share row' }, [

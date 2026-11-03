@@ -6,7 +6,7 @@ const apiAccess = require('./api-access');
 const auth = require('./auth');
 const { NotConfigured } = require('./config');
 const { createGuestLimits } = require('./limits');
-const { SHARE_TOKEN } = require('./trips');
+const { SHARE_TOKEN, shareLinkExpired } = require('./trips');
 
 // Recorded as the editor when someone changes a trip through its share link.
 const GUEST = 'share-link';
@@ -41,8 +41,8 @@ function createAccess({ getConfig, store, clock }) {
 
   const useGuest = createGuestLimits({ store, clock });
 
-  // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip,
-  // but can't see other trips, delete it or change its link. The token comes in a header (or ?token= for images).
+  // Signed-in members can do everything. Someone holding a trip's share link can view and edit that one trip
+  // until the link expires (3 months, see trips.js), but can't see other trips, delete it or reset its link. The token comes in a header (or ?token= for images).
   // Guests also use up a daily allowance for the trip (see limits.js), so a leaked link can't run up the bill.
   // Managed API requests (Microsoft access tokens through API Gateway) are checked only by their token claims:
   // never by a cookie, share link or header, and never by the website's sign-in settings.
@@ -58,6 +58,7 @@ function createAccess({ getConfig, store, clock }) {
     await useGuest(tripId, { requests: 1 });
     const item = await store.getTrip(tripId);
     if (!item || !item.shareToken || !sameToken(token, item.shareToken)) throw refused;
+    if (shareLinkExpired(item, new Date(clock()).toISOString())) throw refused;
     return { user: GUEST, member: false };
   }
 

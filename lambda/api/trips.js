@@ -124,6 +124,21 @@ function nextTripId(existingIds, nowIso) {
 
 const newEventId = () => crypto.randomBytes(9).toString('base64url');
 const newShareToken = () => crypto.randomBytes(18).toString('base64url');
+
+// A share link works for 3 months from when it was made (or reset). After that it stops working and a signed-in
+// member creates a new one.
+const SHARE_LINK_MONTHS = 3;
+function shareExpiry(fromIso) {
+  const from = new Date(fromIso);
+  const to = new Date(from);
+  to.setUTCMonth(to.getUTCMonth() + SHARE_LINK_MONTHS);
+  // 30 November + 3 months is the end of February, not 2 March.
+  if (to.getUTCDate() !== from.getUTCDate()) to.setUTCDate(0);
+  return to.toISOString();
+}
+const shareLinkExpired = (item, nowIso) => Boolean(item.shareExpiresAt) && item.shareExpiresAt <= nowIso;
+// Plans made before every plan had a link, or before links expired: a member opening the plan fixes them.
+const shareLinkNeedsUpdate = (item) => !item.shareToken || !item.shareExpiresAt;
 const newFileId = () => crypto.randomBytes(12).toString('base64url');
 
 // A file the browser is about to upload: what it is called and how big it is. Files belong to the trip, not to events.
@@ -199,6 +214,7 @@ function toApiTrip(item) {
     events,
     files,
     shareToken: item.shareToken || '',
+    shareExpiresAt: item.shareExpiresAt || '',
     updatedAt: item.updatedAt,
     updatedBy: item.updatedBy || '',
   };
@@ -235,6 +251,7 @@ module.exports = {
   MAX_EVENTS,
   MAX_FILES,
   MAX_FILE_BYTES,
+  SHARE_LINK_MONTHS,
   SHARE_TOKEN,
   STATUSES,
   TRIP_ID,
@@ -243,6 +260,9 @@ module.exports = {
   newEventId,
   newShareToken,
   newFileId,
+  shareExpiry,
+  shareLinkExpired,
+  shareLinkNeedsUpdate,
   nextTripId,
   parseEvent,
   parseFileUpdate,

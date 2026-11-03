@@ -30,13 +30,34 @@ test('getSharedTrip re-checks the token on the item', async () => {
   expect(client.sent[1]).toMatchObject({ name: 'GetCommand', input: { ConsistentRead: true } });
 });
 
-test('ensureShareLink keeps an existing token and is not recorded as an edit', async () => {
-  const client = fakeClient([{ Attributes: { id: 'x' } }]);
-  await createStore({ client, table: 'Trips', now }).ensureShareLink('20261000');
+test('ensureShareLink only adds a missing link or a missing expiry, never replaces a link, and is not an edit', async () => {
+  const client = fakeClient([conditionFailed(), conditionFailed(), { Item: { id: '20261000', shareToken: 'kept' } }]);
+  const item = await createStore({ client, table: 'Trips', now }).ensureShareLink('20261000');
+  expect(item.shareToken).toBe('kept');
+  const [create, backfill, read] = client.sent.map((c) => c.input);
+  expect(create.ConditionExpression).toBe('attribute_exists(id) AND attribute_not_exists(shareToken)');
+  expect(create.UpdateExpression).toBe('SET shareToken = :t, shareExpiresAt = :e');
+  expect(create.ExpressionAttributeValues).toMatchObject({ ':t': expect.stringMatching(/^[A-Za-z0-9_-]{24}$/), ':e': '2027-01-01T00:00:00.000Z' });
+  expect(backfill.ConditionExpression).toBe('attribute_exists(shareToken) AND attribute_not_exists(shareExpiresAt)');
+  expect(backfill.UpdateExpression).toBe('SET shareExpiresAt = :e');
+  expect(read).toMatchObject({ Key: { id: '20261000' }, ConsistentRead: true });
+  for (const input of [create, backfill]) expect(input.UpdateExpression).not.toMatch(/updated/);
+});
+
+test('resetShareLink always writes a new token for 3 months', async () => {
+  const client = fakeClient([{ Attributes: { id: '20261000' } }]);
+  await createStore({ client, table: 'Trips', now }).resetShareLink('20261000');
   const { input } = client.sent[0];
-  expect(input.UpdateExpression).toBe('SET shareToken = if_not_exists(shareToken, :t)');
   expect(input.ConditionExpression).toBe('attribute_exists(id)');
-  expect(input.ExpressionAttributeValues[':t']).toMatch(/^[A-Za-z0-9_-]{24}$/);
+  expect(input.UpdateExpression).toBe('SET shareToken = :t, shareExpiresAt = :e');
+  expect(input.ExpressionAttributeValues[':e']).toBe('2027-01-01T00:00:00.000Z');
+  await expect(createStore({ client: fakeClient([conditionFailed()]), table: 'Trips', now }).resetShareLink('x')).rejects.toBeInstanceOf(NotFound);
+});
+
+test('getSharedTrip refuses an expired link', async () => {
+  const token = 'T'.repeat(24);
+  const client = fakeClient([{ Items: [{ id: '20261000' }] }, { Item: { id: '20261000', shareToken: token, shareExpiresAt: '2026-10-01T00:00:00.000Z' } }]);
+  expect(await createStore({ client, table: 'Trips', now }).getSharedTrip(token)).toBeNull();
 });
 
 test('every new plan is created with its share link', async () => {
