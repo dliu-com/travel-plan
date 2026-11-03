@@ -184,6 +184,8 @@ textarea { resize: vertical; min-height: 4.5rem; }
 /* About and Security: cards linking onwards; diagrams come from dl-docs.css */
 .dg-icon-large { width: 48px; height: 48px; border-radius: 12px; }
 .dg-icon-large svg { width: 31px; height: 31px; }
+/* Side-by-side alternatives (pass / warn / fail) have no arrows between them. */
+.info-alternatives { gap: 12px; }
 .info-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0 0; }
 .info-card { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border: 1px solid var(--dl-line); border-radius: var(--dl-radius); background: var(--dl-surface); color: var(--dl-text); }
 .info-card:hover { border-color: var(--dl-accent); text-decoration: none; }

@@ -44,8 +44,10 @@ window.PlanDiagram = (() => {
     return node;
   };
 
-  function icon(name, size = '') {
-    const [colour, parts] = ICONS[name] || ICONS.browser;
+  // colour overrides the icon's own colour, e.g. an amber clock on a "warn" card.
+  function icon(name, size = '', colourOverride = '') {
+    const [ownColour, parts] = ICONS[name] || ICONS.browser;
+    const colour = colourOverride || ownColour;
     const box = el('span', `dg-icon${size ? ` dg-icon-${size}` : ''}`);
     box.style.setProperty('--dg', colour);
     box.setAttribute('aria-hidden', 'true');
@@ -67,7 +69,7 @@ window.PlanDiagram = (() => {
     const node = el(step.href ? 'a' : 'div', className);
     if (step.href) node.href = step.href;
     if (number != null) node.append(el('span', 'dg-num', String(number)));
-    if (step.icon) node.append(icon(step.icon));
+    if (step.icon) node.append(icon(step.icon, '', step.colour));
     const text = el('span', 'dg-text');
     text.append(el('strong', '', step.title));
     if (step.text) text.append(el('small', '', step.text));
@@ -85,12 +87,13 @@ window.PlanDiagram = (() => {
     return figure;
   };
 
-  function flow({ title, steps, note, numbered = false }) {
+  // arrows: false for side-by-side alternatives (e.g. pass / warn / fail) rather than a sequence.
+  function flow({ title, steps, note, numbered = false, arrows = true }) {
     const figure = frame(title);
-    const list = el('div', 'dg-flow');
+    const list = el('div', arrows ? 'dg-flow' : 'dg-flow info-alternatives');
     list.setAttribute('role', 'list');
     steps.forEach((step, index) => {
-      if (index) list.append(arrow());
+      if (index && arrows) list.append(arrow());
       const item = card(step, `dg-step${step.tone ? ` dg-${step.tone}` : ''}`, numbered ? index + 1 : null);
       item.setAttribute('role', 'listitem');
       list.append(item);

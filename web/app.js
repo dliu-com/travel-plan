@@ -171,7 +171,7 @@
       : [el('a', { class: 'dl-button dl-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') })]));
   }
 
-  // narrow: lists and trips; wide: the calendar; docs: /docs, /docs/cost and /docs/security.
+  // narrow: lists and trips; wide: the calendar; docs: /docs, /docs/cost, /docs/security and /docs/health.
   function setLayout(kind) {
     main.classList.toggle('dl-narrow', kind === 'narrow');
     main.classList.toggle('dl-docs-main', kind === 'docs');
@@ -1132,7 +1132,7 @@
   const LEGACY_IDS = { 'spain-ibiza-67mrt9qxtc': '20261000' };
 
   // The docs pages are public; the account line still shows who is signed in.
-  const DOCS_TITLES = { architecture: ['技术架构', 'Technical architecture'], cost: ['运行成本', 'Cost'], security: ['安全', 'Security'] };
+  const DOCS_TITLES = { architecture: ['技术架构', 'Technical architecture'], cost: ['运行成本', 'Cost'], security: ['安全', 'Security'], health: ['网站怎么被测试', 'How the site is tested'] };
   function renderInfo(page) {
     state.trip = null;
     show(...window.PlanInfo[page](t));
@@ -1142,7 +1142,7 @@
 
   async function start() {
     const path = location.pathname;
-    const info = path.match(/^\/docs(?:\/(cost|security))?\/?$/);
+    const info = path.match(/^\/docs(?:\/(cost|security|health))?\/?$/);
     markNav(info && 'docs');
     setLayout(info ? 'docs' : 'narrow');
     if (info) {

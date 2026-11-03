@@ -115,6 +115,16 @@ function createFiles({
       }
     },
 
+    // For /health: one HeadObject outside every travel plan's folder. "Not found" means the bucket answered.
+    async reachable(key) {
+      try {
+        await send(new (lib().HeadObjectCommand)({ Bucket: bucket, Key: `health/${key}` }));
+      } catch (error) {
+        if (error.name === 'NotFound' || error.name === 'NoSuchKey' || (error.$metadata && error.$metadata.httpStatusCode === 404)) return;
+        throw error;
+      }
+    },
+
     // Move a finished upload out of pending/ (which expires after a day) into the trip's folder.
     async keep(tripId, fileId) {
       const { CopyObjectCommand, DeleteObjectCommand } = lib();

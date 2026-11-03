@@ -4,6 +4,7 @@ const { isManaged, routeFor } = require('./api-access');
 const auth = require('./auth');
 const { HttpError, createAccess, header, managedAccess } = require('./access');
 const { loadConfig, NotConfigured } = require('./config');
+const { health, probesFor } = require('./health');
 const { LimitReached, MAX_TRIP_BYTES, tripBytes } = require('./limits');
 const { createFiles } = require('./s3');
 const { createStore, NotFound, TooLarge } = require('./store');
@@ -238,6 +239,11 @@ function createHandler(deps = {}) {
   return async function handler(event) {
     const method = (event.requestContext && event.requestContext.http && event.requestContext.http.method) || 'GET';
     const path = event.rawPath || '/';
+    // status.dliu.com's anonymous check: it gets no request data at all (no cookies, headers or query).
+    if (path === '/health' && (method === 'GET' || method === 'HEAD') && !isManaged(event)) {
+      return health({ probes: probesFor({ store, files, getConfig }), now: clock });
+    }
+
     const params = event.queryStringParameters || {};
     const siteUrl = process.env.SITE_URL;
 

@@ -97,6 +97,11 @@ async function handle(req, res) {
     });
     return res.end(object.body);
   }
+  if (url.pathname === '/health') {
+    const result = await handler({ rawPath: '/health', requestContext: { http: { method: req.method } } });
+    res.writeHead(result.statusCode, result.headers);
+    return res.end(result.body);
+  }
   if (url.pathname.startsWith('/api/')) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -112,7 +117,7 @@ async function handle(req, res) {
     res.end();
     return;
   }
-  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/docs(\/(cost|security))?\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
+  let file = url.pathname === '/' || (/^\/(plan|trips|s)\//.test(url.pathname) || /^\/docs(\/(cost|security|health))?\/?$/.test(url.pathname)) ? '/index.html' : url.pathname;
   if (/^\/docs\/api\/?$/.test(url.pathname)) file = '/docs-api.html';
   // The deploy fills in the managed API's URL (lib/travel-plan-stack.ts); there is no managed API locally.
   if (url.pathname === '/docs/api.md') {

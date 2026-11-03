@@ -34,11 +34,11 @@ test('the API docs page header has the Docs button, marked current, and the lang
   expect(web('app.js')).toContain("const LANGUAGE_KEY = 'plan-language';");
 });
 
-test('every docs page has the same four tabs in the same order', () => {
-  const want = [['/docs', 'Technical architecture'], ['/docs/cost', 'Cost'], ['/docs/security', 'Security'], ['/docs/api', 'API']];
+test('every docs page has the same five tabs in the same order', () => {
+  const want = [['/docs', 'Technical architecture'], ['/docs/cost', 'Cost'], ['/docs/security', 'Security'], ['/docs/api', 'API'], ['/docs/health', 'Health checks']];
   const html = web('docs-api.html').match(/<nav class="dl-tabs"[^>]*>([\s\S]*?)<\/nav>/)[1];
   expect([...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(([, href, text]) => [href, text])).toEqual(want);
-  expect(web('info.js')).toContain("[['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API']]");
+  expect(web('info.js')).toContain("[['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API'], ['/docs/health', t('测试', 'Health checks')]]");
 });
 
 test('the Docs label is localised with the rest of the header', () => {

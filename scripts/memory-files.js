@@ -23,6 +23,7 @@ function createMemoryFiles({ base = '' } = {}) {
       const object = objects.get(uploadKey(tripId, fileId));
       return object ? { size: object.body.length, type: object.type } : null;
     },
+    async reachable() {},
     async keep(tripId, fileId) {
       objects.set(fileKey(tripId, fileId), objects.get(uploadKey(tripId, fileId)));
       objects.delete(uploadKey(tripId, fileId));

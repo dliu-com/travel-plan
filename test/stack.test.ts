@@ -65,8 +65,8 @@ test('api can query the share index and read only its own parameters and the sha
 test('api and auth paths go to the function URL with all methods and no caching', () => {
   const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
   const behaviors = distribution.Properties.DistributionConfig.CacheBehaviors;
-  expect(behaviors.map((b: any) => b.PathPattern)).toEqual(['api/trips/*/pdf', 'api/*', 'auth/*']);
-  for (const behavior of behaviors.slice(1)) {
+  expect(behaviors.map((b: any) => b.PathPattern)).toEqual(['api/trips/*/pdf', 'api/*', 'auth/*', 'health']);
+  for (const behavior of behaviors.slice(1, 3)) {
     expect(behavior.AllowedMethods).toEqual(expect.arrayContaining(['POST', 'PUT', 'DELETE']));
     expect(behavior.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   }
@@ -113,6 +113,8 @@ test('trip and share pages are rewritten to the app shell', () => {
   expect(uri('/docs/')).toBe('/index.html');
   expect(uri('/docs/cost')).toBe('/index.html');
   expect(uri('/docs/security/')).toBe('/index.html');
+  expect(uri('/docs/health')).toBe('/index.html');
+  expect(uri('/docs/health.md')).toBe('/docs/health.md');
   expect(uri('/docs/other')).toBe('/docs/other');
   expect(uri('/about.txt')).toBe('/about.txt');
   expect(uri('/app.js')).toBe('/app.js');
@@ -300,11 +302,16 @@ test('the site is served from every edge location over HTTP/2 and HTTP/3', () =>
 
 test('static files are edge-cached for a day, HTML shells are never cached long', () => {
   const deployments = Object.values(template.findResources('Custom::CDKBucketDeployment')).map((r: any) => r.Properties);
-  expect(deployments).toHaveLength(2);
+  expect(deployments).toHaveLength(3);
   const assets = deployments.find((d: any) => !d.Include);
-  const pages = deployments.find((d: any) => d.Include);
+  const pages = deployments.find((d: any) => d.Include && d.Include[0] === '*.html');
+  const markdown = deployments.find((d: any) => d.Include && d.Include[0] === 'docs/*.md');
   expect(assets.SystemMetadata['cache-control']).toBe('public, max-age=300, s-maxage=86400, stale-while-revalidate=86400');
-  expect(assets.Exclude).toEqual(['*.html']);
+  expect(assets.Exclude).toEqual(['*.html', 'docs/*.md']);
+  // /docs/api.md and /docs/health.md: text/markdown with a charset (the dliu.com health contract).
+  expect(markdown.SystemMetadata['content-type']).toBe('text/markdown; charset=utf-8');
+  expect(markdown.SystemMetadata['cache-control']).toBe(assets.SystemMetadata['cache-control']);
+  expect(markdown.Exclude).toEqual(['*']);
   expect(pages.SystemMetadata['cache-control']).toBe('no-cache');
   expect(pages.Exclude).toEqual(['*']);
   expect(pages.Include).toEqual(['*.html']);
@@ -312,9 +319,9 @@ test('static files are edge-cached for a day, HTML shells are never cached long'
     expect(deployment.DistributionPaths).toEqual(['/*']);
     expect(deployment.Prune).not.toBe(false);
   }
-  // API, auth and PDF responses never reach the site bucket and stay uncached.
+  // API, auth and PDF responses never reach the site bucket and stay uncached (/health has its own 60 s policy).
   const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
-  for (const behavior of distribution.Properties.DistributionConfig.CacheBehaviors) {
+  for (const behavior of distribution.Properties.DistributionConfig.CacheBehaviors.filter((b: any) => b.PathPattern !== 'health')) {
     expect(behavior.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   }
 });
@@ -340,4 +347,24 @@ test('every Lambda, including CDK helpers, logs to a stack-managed group kept fo
     expect({ id, group: ref && groups[ref] ? 'managed' : ref }).toEqual({ id, group: 'managed' });
     expect(groups[ref].Properties.RetentionInDays).toBe(90);
   }
+});
+
+test('/health goes to the API function with nothing forwarded and a 60 s cache keyed on nothing', () => {
+  const distribution = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0] as any;
+  const behaviors = distribution.Properties.DistributionConfig.CacheBehaviors;
+  const health = behaviors.find((b: any) => b.PathPattern === 'health');
+  const api = behaviors.find((b: any) => b.PathPattern === 'api/*');
+  expect(health.TargetOriginId).toBe(api.TargetOriginId);
+  expect(health.AllowedMethods).toEqual(['GET', 'HEAD']);
+  // No origin request policy: CloudFront sends no cookies, Authorization header or query string to the function.
+  expect(health.OriginRequestPolicyId).toBeUndefined();
+  expect(health.ForwardedValues).toBeUndefined();
+  expect(health.FunctionAssociations).toBeUndefined();
+  const policies = template.findResources('AWS::CloudFront::CachePolicy');
+  const policy = (policies[health.CachePolicyId.Ref] as any).Properties.CachePolicyConfig;
+  expect(policy).toMatchObject({ DefaultTTL: 60, MaxTTL: 60, MinTTL: 0 });
+  const key = policy.ParametersInCacheKeyAndForwardedToOrigin;
+  expect(key.CookiesConfig.CookieBehavior).toBe('none');
+  expect(key.HeadersConfig.HeaderBehavior).toBe('none');
+  expect(key.QueryStringsConfig.QueryStringBehavior).toBe('none');
 });

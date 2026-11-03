@@ -42,7 +42,7 @@ export const MANAGED_API_BURST = 20;
 // Link-preview bots (WhatsApp, iMessage, Telegram, Slack, Teams…) get a bare page with the
 // title and no images, so chats show a plain link instead of a big icon card.
 export const PREVIEW_BOTS = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|redditbot|Pinterest|vkShare|Viber/i;
-// Docs: /docs (technical architecture), /docs/cost and /docs/security are app-shell pages, /docs/api has its own
+// Docs: /docs (technical architecture), /docs/cost, /docs/security and /docs/health are app-shell pages, /docs/api has its own
 // page. The old /about and /security addresses move there for good (301), keeping any query string.
 export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security' };
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
@@ -65,7 +65,7 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
     return request;
   }
   var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
-    || path === '/docs' || path === '/docs/cost' || path === '/docs/security';
+    || path === '/docs' || path === '/docs/cost' || path === '/docs/security' || path === '/docs/health';
   var agent = request.headers && request.headers['user-agent'] ? request.headers['user-agent'].value : '';
   if (page && ${PREVIEW_BOTS}.test(agent)) {
     return {
@@ -102,6 +102,9 @@ export interface TravelPlanStackProps extends StackProps {
 
 // The agent-readable API docs, with the managed API's URL filled in at deploy time.
 export const API_DOCS = 'docs/api.md';
+// How status.dliu.com tests the site, for machines (the people's version is /docs/health).
+export const HEALTH_DOCS = 'docs/health.md';
+export const MARKDOWN = 'docs/*.md';
 // The HTML shells (app and API docs page) are never edge-cached for long; everything else under web/ is.
 export const SITE_PAGES = '*.html';
 export const STATIC_CACHE_CONTROL = ['public', 'max-age=300', 's-maxage=86400', 'stale-while-revalidate=86400'];
@@ -355,6 +358,22 @@ export class TravelPlanStack extends Stack {
       responseHeadersPolicy: headers,
     };
 
+    // status.dliu.com's /health: no origin request policy, so CloudFront forwards no cookies, Authorization header or
+    // query string, and the cache key is empty, so the Lambda runs at most about once a minute per edge.
+    const healthCache = new cloudfront.CachePolicy(this, 'HealthCache', {
+      comment: 'plan.dliu.com /health: keyed on nothing, 60 s',
+      minTtl: Duration.seconds(0),
+      defaultTtl: Duration.seconds(60),
+      maxTtl: Duration.seconds(60),
+    });
+    const healthBehavior: cloudfront.BehaviorOptions = {
+      origin: apiBehavior.origin,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      cachePolicy: healthCache,
+      responseHeadersPolicy: headers,
+    };
+
     const pdfBehavior: cloudfront.BehaviorOptions = {
       ...apiBehavior,
       origin: origins.FunctionUrlOrigin.withOriginAccessControl(pdfUrl, { readTimeout: Duration.seconds(30) }),
@@ -378,6 +397,7 @@ export class TravelPlanStack extends Stack {
         'api/trips/*/pdf': pdfBehavior,
         'api/*': apiBehavior,
         'auth/*': apiBehavior,
+        'health': healthBehavior,
       },
       domainNames: [domainName],
       certificate,
@@ -406,29 +426,38 @@ export class TravelPlanStack extends Stack {
 
     const apiDocs = fs.readFileSync(path.join(ROOT, 'web', API_DOCS), 'utf8')
       .split(API_URL_MARKER).join(managedApiUrl ?? '(not enabled in this deployment)');
+    const healthDocs = fs.readFileSync(path.join(ROOT, 'web', HEALTH_DOCS), 'utf8');
     // Scripts, styles, the icon and the Markdown docs are public and the same for everyone, and every
     // deploy invalidates the whole distribution, so the edge keeps them for a day. Each deployment
     // excludes the other's files, so neither prunes them.
     const siteAssets = new s3deploy.BucketDeployment(this, 'SiteContent', {
-      sources: [
-        s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [API_DOCS] }),
-        s3deploy.Source.data(API_DOCS, apiDocs),
-      ],
+      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [MARKDOWN] })],
       destinationBucket: siteBucket,
-      exclude: [SITE_PAGES],
+      exclude: [SITE_PAGES, MARKDOWN],
       distribution,
       distributionPaths: ['/*'],
       cacheControl: STATIC_CACHE_CONTROL.map((directive) => s3deploy.CacheControl.fromString(directive)),
     });
     // The HTML shells stay no-cache: browsers revalidate (cheap 304s) so a deploy takes effect on the next load.
     new s3deploy.BucketDeployment(this, 'SitePages', {
-      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [API_DOCS] })],
+      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [MARKDOWN] })],
       destinationBucket: siteBucket,
       exclude: ['*'],
       include: [SITE_PAGES],
       distribution,
       distributionPaths: ['/*'],
       cacheControl: [s3deploy.CacheControl.noCache()],
+    }).node.addDependency(siteAssets);
+    // The Markdown docs, served as text/markdown; charset=utf-8 (the contract for /docs/health.md).
+    new s3deploy.BucketDeployment(this, 'SiteMarkdown', {
+      sources: [s3deploy.Source.data(API_DOCS, apiDocs), s3deploy.Source.data(HEALTH_DOCS, healthDocs)],
+      destinationBucket: siteBucket,
+      exclude: ['*'],
+      include: [MARKDOWN],
+      distribution,
+      distributionPaths: ['/*'],
+      contentType: 'text/markdown; charset=utf-8',
+      cacheControl: STATIC_CACHE_CONTROL.map((directive) => s3deploy.CacheControl.fromString(directive)),
     }).node.addDependency(siteAssets);
 
     new route53.ARecord(this, 'SiteAliasRecord', {
