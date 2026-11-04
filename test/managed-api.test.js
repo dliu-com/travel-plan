@@ -511,24 +511,31 @@ describe('API docs', () => {
     const stats = root.all((n) => n.has('dg-stat')).map((n) => n.textContent);
     expect(stats[0]).toBe(`${Object.keys(ROUTES).length}endpoints`);
     expect(stats.length).toBeGreaterThanOrEqual(4);
+    const tiers = root.all((n) => n.has('dg-tiers'));
+    expect(tiers).toHaveLength(1);
+    expect(tiers[0].all((n) => n.has('dg-tier')).map((n) => n.className)).toEqual(['dg-tier dg-untrusted', 'dg-tier dg-edge', 'dg-tier dg-app', 'dg-tier dg-private']);
+    expect(tiers[0].all((n) => n.has('dg-link'))).toHaveLength(3);
+    for (const node of tiers[0].all((n) => n.has('dg-node'))) expect(node.all((n) => n.has('dg-icon'))).toHaveLength(1);
     const flows = root.all((n) => n.has('dg-flow'));
-    expect(flows).toHaveLength(3);
-    for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[1].all((n) => n.has(tone))).toHaveLength(1);
+    expect(flows).toHaveLength(2);
+    for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[0].all((n) => n.has(tone))).toHaveLength(1);
     const chart = root.all((n) => n.has('info-chart'))[0];
     expect(chart.all((n) => n.has('info-chart-total')).map((n) => Number(n.textContent)).reduce((a, b) => a + b)).toBe(Object.keys(ROUTES).length);
     expect(root.textContent).toContain('dliu API user');
   });
 
-  test('/docs#api has high-level details only and ends with the Markdown link', () => {
+  test('/docs#api has high-level details only and links the Markdown at the start and end', () => {
     for (const language of ['en', 'zh']) {
       const { root } = renderDocs('api', language);
       expect(root.all((n) => ['details', 'code', 'pre'].includes(n.tagName))).toEqual([]);
       for (const pattern of EXACT) expect(root.textContent).not.toMatch(pattern);
       const article = root.children[1];
       const md = root.all((n) => n.attributes.href === '/docs/api.md');
-      expect(md).toHaveLength(1);
-      expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual(md);
-      expect(md[0].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
+      expect(md).toHaveLength(2);
+      expect(article.children[1].textContent).toBe(`${language === 'en' ? 'Machine-readable version: ' : '机器可读版本：'}/docs/api.md`);
+      expect(article.children[1].all((n) => n.tagName === 'a')).toEqual([md[0]]);
+      expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual([md[1]]);
+      expect(md[1].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
       expect(root.all((n) => n.attributes.href === 'https://auth.dliu.com/docs/api')).toHaveLength(1);
     }
   });

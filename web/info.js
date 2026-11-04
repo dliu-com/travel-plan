@@ -448,6 +448,11 @@ window.PlanInfo = (() => {
     }
     return figure;
   }
+  function machineTopLink(t, href) {
+    const p = el('p', 'source');
+    p.append(t('机器可读版本：', 'Machine-readable version: '), link(href, href));
+    return p;
+  }
   function machineLink(t, href) {
     const p = el('p', 'source');
     p.append(link(href, t('给机器读的技术版本（Markdown）', 'Technical version for machines (Markdown)')));
@@ -506,13 +511,14 @@ window.PlanInfo = (() => {
   const STATUS_PLACES = [['爱尔兰', 'Ireland'], ['美国弗吉尼亚', 'Virginia'], ['东京', 'Tokyo']];
 
   function health(t) {
-    const { flow, table, callout, stats } = D();
+    const { flow, tiers, table, callout, stats } = D();
     const name = (f) => t(...f.name);
     const guestChecks = (key) => GUEST_CHECKS.filter(([k]) => k === key).length;
     const checks = GUEST_CHECKS.length + HEALTH_ENDPOINT.length;
     const page = el('article', 'dl-docs');
     page.append(
       el('h1', '', t('网站怎么被测试', 'How the site is tested')),
+      machineTopLink(t, '/docs/health.md'),
       el('p', 'lead', t(
         'status.dliu.com 每 15 分钟像一位没登录的普通访客一样访问本站：打开公开页面，请网站检查一下自己的存储，再把结果显示在状态页上。它从不登录，也从不改动任何内容。',
         'Every 15 minutes, status.dliu.com visits this site like an ordinary visitor who isn’t signed in: it opens the public pages, asks the site to check its own storage, and shows the result on its status page. It never signs in and never changes anything.',
@@ -523,17 +529,28 @@ window.PlanInfo = (() => {
         [t('15 分钟', '15 min'), t('测一次', 'between visits'), 'clock'],
         [String(STATUS_PLACES.length), `${t('个地点：', 'places: ')}${STATUS_PLACES.map((p) => t(...p)).join(t('、', ', '))}`, 'globe'],
       ]),
-      flow({
-        title: t('一次测试怎么进行', 'How one test run goes'),
-        numbered: true,
-        steps: [
-          { icon: 'bot', title: 'status.dliu.com', text: t('每 15 分钟，从 3 个地点，以访客身份', 'Every 15 minutes, from 3 places, as a guest') },
-          { icon: 'browser', title: t('页面和登录', 'Pages and sign-in'), text: t('首页、/docs、代理说明、转到 Microsoft 登录', 'Start page, /docs, the agent guides, Sign in to Microsoft'), tone: 'app' },
-          { icon: 'lock', title: t('隐私门', 'Privacy gate'), text: t('行程对访客保持上锁', 'Travel plans stay locked to a guest'), tone: 'private' },
-          { icon: 'lambda', title: t('网站自查', 'The site checks itself'), text: t('/health 读取数据库、附件存储和登录设置', '/health reads its database, attachment store and sign-in settings'), tone: 'edge' },
-          { icon: 'chart', title: t('结果', 'Result'), text: t('显示在 status.dliu.com 上', 'Shown on status.dliu.com') },
+      tiers({
+        title: t('网站怎么被测试', 'How the site is tested'),
+        rows: [
+          { badge: t('访客', 'Guest'), tone: 'untrusted', label: t('测试者', 'Tester'), nodes: [
+            { icon: 'bot', title: 'status.dliu.com', text: t('每 15 分钟一次，以没登录的访客身份', 'Every 15 minutes, as a visitor who isn’t signed in') },
+            { icon: 'globe', title: t('3 个地点', '3 places'), text: STATUS_PLACES.map((p) => t(...p)).join(t('、', ', ')) },
+          ] },
+          { badge: t('边缘', 'Edge'), tone: 'edge', label: t('被测试的页面和接口', 'Pages and endpoints tested'), link: t('HTTPS，不登录', 'HTTPS, no sign-in'), nodes: [
+            { icon: 'cloudfront', title: t('页面', 'Pages'), text: t('首页、/docs 和代理说明', 'Start page, /docs and the agent guides') },
+            { icon: 'entra', title: t('Microsoft 登录', 'Microsoft sign-in'), text: t('/auth/login 转到 Microsoft', '/auth/login hands over to Microsoft') },
+            { icon: 'lock', title: t('隐私门', 'Privacy gate'), text: t('/api/me、行程和 PDF 对访客保持上锁', '/api/me, travel plans and PDFs stay locked to a guest') },
+          ] },
+          { badge: t('应用', 'App'), tone: 'app', label: t('网站自查', 'The site checks itself'), link: '/health', nodes: [
+            { icon: 'lambda', title: 'Lambda API', text: t('/health：每项各读一次，结果缓存 1 分钟', '/health: one small read each, kept for a minute') },
+          ] },
+          { badge: t('私有', 'Private'), tone: 'private', label: t('它读取的存储', 'Storage it reads'), link: t('只读', 'Read only'), nodes: [
+            { icon: 'dynamodb', title: 'DynamoDB', text: t('行程数据库', 'Travel plan database') },
+            { icon: 's3', title: t('S3 附件桶', 'S3 files bucket'), text: t('附件存储', 'Attachment store') },
+            { icon: 'lock', title: 'SSM Parameter Store', text: t('登录设置', 'Sign-in settings') },
+          ] },
         ],
-        note: t('只读：不登录、不带分享链接、不改动任何行程。', 'Read only: no sign-in, no share link, no changes to any travel plan.'),
+        note: t('只读：不登录、不带分享链接、不改动任何行程。结果显示在 status.dliu.com 上。', 'Read only: no sign-in, no share link, no changes to any travel plan. The result is shown on status.dliu.com.'),
       }),
       flow({
         title: t('结果的含义', 'What the result means'),
@@ -617,11 +634,12 @@ window.PlanInfo = (() => {
   ];
 
   function api(t) {
-    const { flow, table, callout, stats } = D();
+    const { flow, tiers, table, callout, stats } = D();
     const scope = (key) => API_SCOPES.find(([s]) => s === key);
     const page = el('article', 'dl-docs');
     page.append(
       el('h1', '', t('行程 API', 'Travel plan API')),
+      machineTopLink(t, '/docs/api.md'),
       el('p', 'lead', t(
         '人用网站；可信的工具、脚本和 AI 代理用这个 API 来读取和修改行程。它代表一位已登录的人工作，用的是 Microsoft 登录，而不是网站的登录或分享链接。',
         'People use the website; trusted tools, scripts and AI agents use this API to read and change travel plans. It works for a signed-in person, with a Microsoft sign-in rather than the website’s sign-in or a share link.',
@@ -632,15 +650,25 @@ window.PlanInfo = (() => {
         ['50 MB', t('单个附件上限', 'largest attachment'), 'upload'],
         ['0', t('个令牌被保存', 'tokens kept by the site'), 'lock'],
       ]),
-      flow({
+      tiers({
         title: t('登录和检查怎么进行', 'How sign-in and checks work'),
-        numbered: true,
-        steps: [
-          { icon: 'bot', title: t('你的工具或代理', 'Your tool or agent'), text: t('代表一位被允许使用 API 的人', 'Working for a person allowed to use the API') },
-          { icon: 'entra', title: t('Microsoft 登录', 'Microsoft sign-in'), text: t('拿到一个短时有效的 dliu API 访问令牌（见 auth.dliu.com）', 'Gets a short-lived access token for the dliu API (see auth.dliu.com)'), tone: 'edge' },
-          { icon: 'shield', title: t('网关检查', 'Gateway check'), text: t('令牌是真的吗？来自 dliu.com 组织、给这个 API、没过期、有这项权限？', 'Is the token real, from the dliu.com organisation, for this API, unexpired, with this permission?'), tone: 'edge' },
-          { icon: 'lambda', title: t('行程函数再查一遍', 'The travel plan function checks again'), text: t('批准的应用、dliu API user 角色、这项权限', 'The approved app, the dliu API user role, this permission'), tone: 'app' },
-          { icon: 'dynamodb', title: t('你的行程', 'Your travel plans'), text: t('读取或修改；改动会记下是谁做的', 'Read or changed; changes show who made them'), tone: 'private' },
+        rows: [
+          { badge: t('不可信', 'Untrusted'), tone: 'untrusted', label: t('调用方', 'Caller'), nodes: [
+            { icon: 'bot', title: t('你的工具或代理', 'Your tool or agent'), text: t('代表一位被允许使用 API 的人', 'Working for a person allowed to use the API') },
+            { icon: 'entra', title: 'Microsoft Entra ID', text: t('给出一个短时有效的 dliu API 访问令牌（见 auth.dliu.com）', 'Gives a short-lived access token for the dliu API (see auth.dliu.com)') },
+          ] },
+          { badge: t('边缘', 'Edge'), tone: 'edge', label: 'API Gateway', link: t('HTTPS + Microsoft 访问令牌', 'HTTPS + Microsoft access token'), nodes: [
+            { icon: 'key', title: t('网关检查', 'Gateway check'), text: t('令牌是真的吗？来自 dliu.com 组织、给这个 API、没过期、有这项权限？', 'Is the token real, from the dliu.com organisation, for this API, unexpired, with this permission?') },
+            { icon: 'gauge', title: t('限速', 'Rate limit'), text: t('每秒 10 个，突发 20 个', '10 a second, bursts of 20') },
+          ] },
+          { badge: 'API', tone: 'app', label: 'Lambda', link: t('只放行通过检查的请求', 'Checked requests only'), nodes: [
+            { icon: 'lambda', title: t('行程函数再查一遍', 'The travel plan function checks again'), text: t('批准的应用、dliu API user 角色、这项权限', 'The approved app, the dliu API user role, this permission') },
+            { icon: 'lambda', title: t('PDF 导出', 'PDF export'), text: t('同样的检查；只读', 'The same checks; read only') },
+          ] },
+          { badge: t('私有', 'Private'), tone: 'private', label: t('你的行程', 'Your travel plans'), link: t('最小权限 IAM', 'Least-privilege IAM'), nodes: [
+            { icon: 'dynamodb', title: 'DynamoDB', text: t('读取或修改；改动会记下是谁做的', 'Read or changed; changes show who made them') },
+            { icon: 's3', title: t('S3 附件桶', 'S3 files bucket'), text: t('文件用一次性链接直接上传和下载', 'Files go up and down directly with one-time links') },
+          ] },
         ],
         note: t('网站自己的登录和分享链接在这里无效；API 从不保存令牌。', 'The website’s own sign-in and share links don’t work here, and the API never keeps tokens.'),
       }),

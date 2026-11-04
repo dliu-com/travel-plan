@@ -120,12 +120,23 @@ test('/docs#health is the Health tab with flows of how the site is tested', () =
   const tabs = root.all((n) => n.has('dl-tabs'))[0];
   const current = tabs.all((n) => n.attributes['aria-current'] === 'page');
   expect(current.map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs#health', 'Health']]);
+  // The Architecture "Components" style: tiers from the tester down to the storage, joined by labelled arrows.
+  const tiers = root.all((n) => n.has('dg-tiers'));
+  expect(tiers).toHaveLength(1);
+  expect(tiers[0].tagName).toBe('figure');
+  expect(tiers[0].all((n) => n.has('dg-tier')).map((n) => n.className)).toEqual(['dg-tier dg-untrusted', 'dg-tier dg-edge', 'dg-tier dg-app', 'dg-tier dg-private']);
+  for (const tier of tiers[0].all((n) => n.has('dg-tier'))) {
+    expect(tier.all((n) => n.has('dg-tier-label'))[0].all((n) => n.has('dg-badge'))).toHaveLength(1);
+    for (const node of tier.all((n) => n.has('dg-node'))) expect(node.all((n) => n.has('dg-icon'))).toHaveLength(1);
+  }
+  const links = tiers[0].all((n) => n.has('dg-link'));
+  expect(links).toHaveLength(3);
+  for (const link of links) expect(link.all((n) => n.has('dg-arrow'))).toHaveLength(1);
+  expect(tiers[0].textContent).toContain('/health');
   const flows = root.all((n) => n.has('dg-flow'));
-  expect(flows).toHaveLength(2);
-  expect(flows[0].all((n) => n.has('dg-step'))).toHaveLength(5);
-  expect(flows[0].all((n) => n.has('dg-arrow'))).toHaveLength(4);
-  for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[1].all((n) => n.has(tone))).toHaveLength(1);
-  expect(flows[1].all((n) => n.has('dg-arrow'))).toHaveLength(0);
+  expect(flows).toHaveLength(1);
+  for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[0].all((n) => n.has(tone))).toHaveLength(1);
+  expect(flows[0].all((n) => n.has('dg-arrow'))).toHaveLength(0);
   expect(root.textContent).toContain('status.dliu.com');
   expect(root.textContent).toContain('What isn’t tested');
 });
@@ -152,7 +163,7 @@ test('/docs#health shows numbers, a plain-words table and a chart', () => {
   expect(chart.attributes['aria-label']).toContain('Microsoft sign-in 3');
 });
 
-test('/docs#health keeps high-level details (which page or endpoint) but no exact ones, and ends with the Markdown link', () => {
+test('/docs#health keeps high-level details (which page or endpoint) but no exact ones, and links the Markdown at the start and end', () => {
   for (const language of ['en', 'zh']) {
     const { root } = renderHealth(language);
     expect(root.all((n) => ['details', 'code', 'pre'].includes(n.tagName))).toEqual([]);
@@ -160,9 +171,12 @@ test('/docs#health keeps high-level details (which page or endpoint) but no exac
     for (const endpoint of ['/health', '/api/me', '/auth/login', '/api/trips']) expect(root.textContent).toContain(endpoint);
     const article = root.children[1];
     const md = root.all((n) => n.attributes.href === '/docs/health.md');
-    expect(md).toHaveLength(1);
-    expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual(md);
-    expect(md[0].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
+    expect(md).toHaveLength(2);
+    expect(article.children[0].tagName).toBe('h1');
+    expect(article.children[1].textContent).toBe(`${language === 'en' ? 'Machine-readable version: ' : '机器可读版本：'}/docs/health.md`);
+    expect(article.children[1].all((n) => n.tagName === 'a')).toEqual([md[0]]);
+    expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual([md[1]]);
+    expect(md[1].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
   }
 });
 
