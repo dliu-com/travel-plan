@@ -183,6 +183,19 @@ test('pages are not indexed and only load our own scripts', () => {
   expect(csp).not.toMatch(/https:\/\/files\.dliu\.com[ ;]/);
 });
 
+test('the sitemap lists no URLs, because every page is noindex, and robots.txt lets crawlers see that', () => {
+  const web = (file: string) => fs.readFileSync(path.join(__dirname, '..', 'web', file), 'utf8');
+  const policy = Object.values(template.findResources('AWS::CloudFront::ResponseHeadersPolicy'))[0] as any;
+  const robotsHeader = policy.Properties.ResponseHeadersPolicyConfig.CustomHeadersConfig.Items.find((h: any) => h.Header === 'X-Robots-Tag');
+  expect(robotsHeader).toEqual({ Header: 'X-Robots-Tag', Value: 'noindex, nofollow', Override: true });
+  expect(web('index.html')).toContain('<meta name="robots" content="noindex, nofollow">');
+  const sitemap = web('sitemap.xml');
+  expect(sitemap).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
+  expect(sitemap).not.toContain('<url>');
+  const robots = web('robots.txt').split('\n').filter((line) => line && !line.startsWith('#'));
+  expect(robots).toEqual(['User-agent: *', 'Allow: /', 'Sitemap: https://plan.dliu.com/sitemap.xml']);
+});
+
 test('attachments live in a private bucket that only accepts uploads from the site', () => {
   template.hasResourceProperties('AWS::S3::Bucket', {
     PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true },
