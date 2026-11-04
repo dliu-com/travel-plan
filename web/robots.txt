@@ -1,6 +1,4 @@
-# plan.dliu.com is a private trip planner: every page is noindex, nofollow, so the sitemap lists no URLs.
+# plan.dliu.com is a private trip planner: every page is noindex, nofollow, so there is no sitemap.
 # Crawling stays allowed so search engines can see that noindex and drop any page they already know.
 User-agent: *
 Allow: /
-
-Sitemap: https://plan.dliu.com/sitemap.xml
