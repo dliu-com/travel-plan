@@ -1,6 +1,6 @@
 'use strict';
 
-// The /docs (technical architecture), /docs/cost, /docs/security and /docs#health (Testing) pages. All text is set through textContent (via PlanDiagram and el), never as HTML.
+// The /docs (architecture), /docs/cost, /docs/security, /docs#api (API) and /docs#health (Health) pages. All text is set through textContent (via PlanDiagram and el), never as HTML.
 window.PlanInfo = (() => {
   const D = () => window.PlanDiagram;
   const REVIEWED = { zh: '2026 年 11 月 3 日', en: '3 November 2026' };
@@ -27,7 +27,7 @@ window.PlanInfo = (() => {
     node.append(el('h2', '', title), ...children);
     return node;
   }
-  const TABS = (t) => [['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API'], ['/docs#health', t('测试', 'Testing')]];
+  const TABS = (t) => [['/docs', t('架构', 'Architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs#api', 'API'], ['/docs#health', t('健康', 'Health')]];
   function tabs(t, current) {
     const nav = el('nav', 'dl-tabs');
     nav.setAttribute('aria-label', t('文档章节', 'Docs sections'));
@@ -51,12 +51,12 @@ window.PlanInfo = (() => {
     return grid;
   }
 
-  // ---------------------------------------------------------------- Technical architecture
+  // ---------------------------------------------------------------- Architecture
   function architecture(t) {
     const { stats, tiers, flow, more } = D();
     const page = el('article', 'dl-docs');
     page.append(
-      el('h1', '', t('技术架构', 'Technical architecture')),
+      el('h1', '', t('架构', 'Architecture')),
       el('p', 'lead', t(
         'DL 旅行计划是一个私人行程规划网站：按天安排行程、标注确认状态、附上预订单和照片，再通过链接和同行的朋友一起编辑。网站完全运行在 AWS 无服务器服务上，空闲时不占用任何服务器。',
         'DL Travel Plan is a private travel planner: lay out each day, mark what is confirmed, attach bookings and photos, and share a link so travel companions can edit too. It runs entirely on AWS serverless services, so nothing is running when nobody is using it.',
@@ -140,7 +140,7 @@ window.PlanInfo = (() => {
     page.append(section(t('更多文档', 'More docs'), readMore(t, [
       { href: '/docs/cost', icon: 'budget', title: t('运行成本', 'Cost'), text: t('每月费用、免费额度，以及被刷流量时最多花多少钱', 'Monthly cost, free tiers, and the most a flood can cost') },
       { href: '/docs/security', icon: 'shield', title: t('安全审查', 'Security review'), text: t('威胁模型、渗透测试结果、代码审查和已接受的风险', 'Threat model, pen-test results, code review and accepted risks') },
-      { href: '/docs/api', icon: 'key', title: 'API', text: t('用 Microsoft 访问令牌读写行程', 'Read and edit travel plans with a Microsoft access token') },
+      { href: '/docs#api', icon: 'key', title: 'API', text: t('用 Microsoft 访问令牌读写行程', 'Read and edit travel plans with a Microsoft access token') },
     ])));
 
     page.append(more(t('技术细节', 'Technical details'), list([
@@ -419,35 +419,79 @@ window.PlanInfo = (() => {
     return [tabs(t, '/docs/security'), page];
   }
 
-  // ---------------------------------------------------------------- Health checks (how status.dliu.com tests the site)
-  // Keep in sync with web/docs/health.md and lambda/api/health.js (test/health.test.js checks all three).
-  const SITE = 'https://plan.dliu.com';
+  // A horizontal bar chart. rows: [label, [value per series]]; one colour per series, with a legend.
+  function barChart({ title, series, rows }) {
+    const total = (values) => values.reduce((a, b) => a + b, 0);
+    const max = Math.max(...rows.map(([, values]) => total(values)));
+    const figure = el('figure', 'info-chart');
+    figure.setAttribute('role', 'img');
+    figure.setAttribute('aria-label', `${title}: ${rows.map(([label, values]) => `${label} ${total(values)}`).join(', ')}`);
+    figure.append(el('figcaption', '', title));
+    const legend = el('p', 'info-chart-legend');
+    series.forEach((name, index) => {
+      const item = el('span', 'info-chart-legend-item');
+      item.append(el('span', `info-chart-swatch info-chart-s${index}`), name);
+      legend.append(item);
+    });
+    figure.append(legend);
+    for (const [label, values] of rows) {
+      const row = el('div', 'info-chart-row');
+      const bar = el('span', 'info-chart-bar');
+      values.forEach((value, index) => {
+        if (!value) return;
+        const part = el('span', `info-chart-s${index}`);
+        part.style.setProperty('width', `${(value / max) * 100}%`);
+        bar.append(part);
+      });
+      row.append(el('span', 'info-chart-label', label), bar, el('strong', 'info-chart-total', String(total(values))));
+      figure.append(row);
+    }
+    return figure;
+  }
+  function machineLink(t, href) {
+    const p = el('p', 'source');
+    p.append(link(href, t('给机器读的技术版本（Markdown）', 'Technical version for machines (Markdown)')));
+    return p;
+  }
+
+  // ---------------------------------------------------------------- Health (/docs#health: how status.dliu.com tests the site)
+  // For people: plain words, numbers and pictures, and only high-level details (which page or endpoint).
+  // Every exact detail (status codes, headers, JSON) is in web/docs/health.md. Keep the keys and checks in sync
+  // with that file and lambda/api/health.js (test/health.test.js checks all three).
   const HEALTH_FUNCTIONS = [
-    { key: 'pages', critical: true, name: ['页面', 'Pages'], line: [
-      '首页和这些文档能打开。如果失败，谁都打不开网站。',
-      'The start page and these docs open. If this fails, nobody can open the site.'] },
-    { key: 'docs', critical: false, name: ['文档', 'Docs'], line: [
-      '给 AI 代理看的纯文本文档能读取。如果失败，代理读不到 API 用法；人不受影响。',
-      'The plain-text docs for AI agents load. If this fails, agents can’t read how to use the API; people aren’t affected.'] },
-    { key: 'signin', critical: true, name: ['Microsoft 登录', 'Microsoft sign-in'], health: true, line: [
-      '“登录”会转到 Microsoft，网站能认出你还没登录，并能读到登录设置。如果失败，成员无法登录。',
-      'Sign in leads to Microsoft, the site can tell you aren’t signed in, and it can read its sign-in settings. If this fails, members can’t sign in.'] },
-    { key: 'private', critical: true, name: ['隐私门', 'Privacy gate'], line: [
-      '没登录、没有分享链接的人看不到任何行程。如果失败，问题很严重：说明行程对所有人公开了。',
-      'Travel plans stay closed to anyone who isn’t signed in and has no share link. If this fails it’s serious: plans would be open to anyone.'] },
-    { key: 'trips', critical: true, name: ['行程存储', 'Travel plan storage'], health: true, line: [
-      '网站能读它的数据库。如果失败，行程打不开也存不了。',
-      'The site can read its database. If this fails, no travel plan opens or saves.'] },
-    { key: 'files', critical: false, name: ['附件存储', 'Attachment storage'], health: true, line: [
-      '网站能连上存放预订单和照片的存储。如果失败，附件打不开也传不上，但行程本身照常。',
-      'The site can reach the store for bookings and photos. If this fails, attachments can’t be opened or uploaded, but plans still work.'] },
-    { key: 'pdf', critical: false, name: ['PDF 导出', 'PDF export'], line: [
-      '生成 PDF 的函数有回应（不会真的生成 PDF）。如果失败，“下载 PDF”不可用，其他功能照常。',
-      'The function that makes PDFs answers (no PDF is actually made). If this fails, Download PDF doesn’t work; everything else does.'] },
+    { key: 'pages', critical: true, name: ['页面', 'Pages'],
+      does: ['显示首页和这些文档', 'Shows the start page and these docs'],
+      how: ['打开首页和 /docs，看页面是否完整', 'Opens the start page and /docs and checks they look right'],
+      broke: ['谁都打不开网站', 'Nobody can open the site'] },
+    { key: 'docs', critical: false, name: ['文档', 'Docs'],
+      does: ['让 AI 代理读懂怎么用本站', 'Lets AI agents read how to use the site'],
+      how: ['读取给代理看的两份纯文本说明：/docs/api.md 和 /docs/health.md', 'Reads the two plain-text guides for agents: /docs/api.md and /docs/health.md'],
+      broke: ['代理读不到说明；人不受影响', 'Agents can’t read the guides; people aren’t affected'] },
+    { key: 'signin', critical: true, name: ['Microsoft 登录', 'Microsoft sign-in'], health: true,
+      does: ['让成员用 Microsoft 账户登录', 'Lets members sign in with Microsoft'],
+      how: ['看 /auth/login 是否转到 Microsoft、/api/me 是否认出访客没登录，并由 /health 读取登录设置', 'Checks that /auth/login leads to Microsoft and /api/me sees a guest as signed out; /health reads the sign-in settings'],
+      broke: ['成员无法登录', 'Members can’t sign in'] },
+    { key: 'private', critical: true, name: ['隐私门', 'Privacy gate'],
+      does: ['没登录、没有分享链接的人看不到任何行程', 'Keeps travel plans closed to anyone not signed in and without a share link'],
+      how: ['不登录就向 /api/trips 要行程列表，应该被拒绝', 'Asks /api/trips for the plan list without signing in, and expects to be turned away'],
+      broke: ['很严重：行程会对所有人公开', 'Serious: plans would be open to anyone'] },
+    { key: 'trips', critical: true, name: ['行程存储', 'Travel plan storage'], health: true,
+      does: ['保存所有行程、日程和活动', 'Keeps every travel plan, day and event'],
+      how: ['/health 从数据库读一条测试记录，从不读真实行程', '/health reads one test entry from the database, never a real plan'],
+      broke: ['行程打不开也存不了', 'No plan opens or saves'] },
+    { key: 'files', critical: false, name: ['附件存储', 'Attachment storage'], health: true,
+      does: ['保存预订单、票据和照片', 'Keeps bookings, tickets and photos'],
+      how: ['/health 确认附件存储有回应，不打开任何文件', '/health checks the attachment store answers, without opening a file'],
+      broke: ['附件打不开也传不上；行程照常', 'Attachments can’t be opened or uploaded; plans still work'] },
+    { key: 'pdf', critical: false, name: ['PDF 导出', 'PDF export'],
+      does: ['把行程做成 PDF，方便打印或分享', 'Makes a PDF of a plan to print or share'],
+      how: ['向 /api/trips/health/pdf 要一个不存在的行程的 PDF，PDF 函数必须作答（不会真的生成 PDF）', 'Asks /api/trips/health/pdf for a plan that doesn’t exist; the PDF function must answer (no PDF is made)'],
+      broke: ['“下载 PDF”不可用，其他功能照常', 'Download PDF doesn’t work; everything else does'] },
   ];
   // What /health reports, in its order and with its names (lambda/api/health.js FUNCTIONS).
   const HEALTH_ENDPOINT = [['trips', 'Travel plan storage'], ['files', 'Attachment storage'], ['signin', 'Microsoft sign-in settings']];
-  // [function key, method, path, status, content type, body marker / JSON key / Location prefix]
+  // [function key, method, path, status, content type, body marker / JSON key / Location prefix]. Not shown on the
+  // page (it's for people); test/health.test.js keeps it equal to the guest-check table in web/docs/health.md.
   const GUEST_CHECKS = [
     ['pages', 'GET', '/', '200', 'text/html', 'contains class="dl-header"'],
     ['pages', 'GET', '/docs', '200', 'text/html', 'contains class="dl-footer"'],
@@ -458,10 +502,14 @@ window.PlanInfo = (() => {
     ['private', 'GET', '/api/trips', '401', 'application/json', 'JSON key error'],
     ['pdf', 'GET', '/api/trips/health/pdf', '404', 'application/json', 'JSON key error'],
   ];
+  // status.dliu.com runs every check from each of these, every 15 minutes.
+  const STATUS_PLACES = [['爱尔兰', 'Ireland'], ['美国弗吉尼亚', 'Virginia'], ['东京', 'Tokyo']];
 
   function health(t) {
-    const { flow, more, table, callout } = D();
+    const { flow, table, callout, stats } = D();
     const name = (f) => t(...f.name);
+    const guestChecks = (key) => GUEST_CHECKS.filter(([k]) => k === key).length;
+    const checks = GUEST_CHECKS.length + HEALTH_ENDPOINT.length;
     const page = el('article', 'dl-docs');
     page.append(
       el('h1', '', t('网站怎么被测试', 'How the site is tested')),
@@ -469,14 +517,21 @@ window.PlanInfo = (() => {
         'status.dliu.com 每 15 分钟像一位没登录的普通访客一样访问本站：打开公开页面，请网站检查一下自己的存储，再把结果显示在状态页上。它从不登录，也从不改动任何内容。',
         'Every 15 minutes, status.dliu.com visits this site like an ordinary visitor who isn’t signed in: it opens the public pages, asks the site to check its own storage, and shows the result on its status page. It never signs in and never changes anything.',
       )),
+      stats([
+        [String(HEALTH_FUNCTIONS.length), t('项功能被测试', 'functions tested'), 'check'],
+        [String(checks), t('项检查，每次都做', 'checks on every visit'), 'gauge'],
+        [t('15 分钟', '15 min'), t('测一次', 'between visits'), 'clock'],
+        [String(STATUS_PLACES.length), `${t('个地点：', 'places: ')}${STATUS_PLACES.map((p) => t(...p)).join(t('、', ', '))}`, 'globe'],
+      ]),
       flow({
-        title: t('测试怎么进行', 'How the test runs'),
+        title: t('一次测试怎么进行', 'How one test run goes'),
         numbered: true,
         steps: [
-          { icon: 'bot', title: 'status.dliu.com', text: t('每 15 分钟，以访客身份', 'Every 15 minutes, as a guest') },
-          { icon: 'browser', title: t('公开页面和地址', 'Public pages and addresses'), text: t('首页、文档、登录、上锁的行程', 'Start page, docs, sign-in, locked plans'), tone: 'app' },
-          { icon: 'lambda', title: '/health', text: t('网站自查', 'The site checks itself'), tone: 'edge' },
-          { icon: 'dynamodb', title: t('存储和设置', 'Storage and settings'), text: t('行程、附件、登录设置', 'Travel plans, attachments, sign-in settings'), tone: 'private' },
+          { icon: 'bot', title: 'status.dliu.com', text: t('每 15 分钟，从 3 个地点，以访客身份', 'Every 15 minutes, from 3 places, as a guest') },
+          { icon: 'browser', title: t('页面和登录', 'Pages and sign-in'), text: t('首页、/docs、代理说明、转到 Microsoft 登录', 'Start page, /docs, the agent guides, Sign in to Microsoft'), tone: 'app' },
+          { icon: 'lock', title: t('隐私门', 'Privacy gate'), text: t('行程对访客保持上锁', 'Travel plans stay locked to a guest'), tone: 'private' },
+          { icon: 'lambda', title: t('网站自查', 'The site checks itself'), text: t('/health 读取数据库、附件存储和登录设置', '/health reads its database, attachment store and sign-in settings'), tone: 'edge' },
+          { icon: 'chart', title: t('结果', 'Result'), text: t('显示在 status.dliu.com 上', 'Shown on status.dliu.com') },
         ],
         note: t('只读：不登录、不带分享链接、不改动任何行程。', 'Read only: no sign-in, no share link, no changes to any travel plan.'),
       }),
@@ -484,73 +539,183 @@ window.PlanInfo = (() => {
         title: t('结果的含义', 'What the result means'),
         arrows: false,
         steps: [
-          { icon: 'check', title: t('正常', 'Pass'), text: t('一切正常', 'Everything works'), tone: 'good' },
-          { icon: 'clock', title: t('警告', 'Warn'), text: t('变慢了，或者某个次要功能有问题', 'Slow, or a minor part has trouble'), tone: 'warn', colour: '#b7791f' },
-          { icon: 'gauge', title: t('故障', 'Fail'), text: t('某个功能用不了', 'Something doesn’t work'), tone: 'bad' },
+          { icon: 'check', title: t('正常', 'Working'), text: t('每项检查都按预期、及时作答', 'Every check answered as expected, in good time'), tone: 'good' },
+          { icon: 'clock', title: t('慢', 'Slow'), text: t('能用，但有地方回答得慢', 'It works, but something answered slowly'), tone: 'warn', colour: '#b7791f' },
+          { icon: 'gauge', title: t('故障', 'Not working'), text: t('某项检查得到错误回答或没有回答', 'A check got the wrong answer, or none'), tone: 'bad' },
         ],
       }),
     );
 
-    const items = el('ul', 'health-functions');
-    for (const f of HEALTH_FUNCTIONS) {
-      const li = el('li');
-      li.setAttribute('data-function', f.key);
-      li.append(el('strong', '', name(f)), `${f.critical ? t('（必需）', ' (essential)') : ''}${t('：', ': ')}${t(...f.line)}`);
-      items.append(li);
-    }
-    page.append(section(t('检查哪些功能', 'What is checked'), items));
+    page.append(section(t('每项功能怎么测', 'How each function is tested'),
+      table(
+        [t('功能', 'Function'), t('必需', 'Essential'), t('正常时', 'When it works'), t('怎么测', 'How it’s tested'), t('如果坏了', 'If it stopped working')],
+        HEALTH_FUNCTIONS.map((f) => [
+          name(f),
+          f.critical ? t('是', 'Yes') : t('否', 'No'),
+          { mark: '✓', tone: 'good', text: t(...f.does) },
+          t(...f.how),
+          { mark: '✗', tone: 'bad', text: t(...f.broke) },
+        ]),
+        'info-functions',
+        HEALTH_FUNCTIONS.map((f) => ({ 'data-function': f.key })),
+      ),
+      el('p', '', t('必需的功能坏了，网站就算“故障”；其他功能坏了，网站仍能用，只是少了这一部分。', 'If an essential function stops working, the site counts as down; if another one does, the site still works without that part.')),
+    ));
 
-    const rows = GUEST_CHECKS.map(([key, method, path, status, type, marker]) => [key, method, SITE + path, status, type, marker]);
-    const json = JSON.stringify({
-      status: 'pass',
-      time: '2026-11-03T23:00:00Z',
-      functions: HEALTH_ENDPOINT.map(([key, label]) => ({ key, name: label, status: 'pass' })),
-    }, null, 2);
-    page.append(section(t('技术细节', 'Technical details'),
-      more(t('访客检查：地址、状态码和内容', 'Guest checks: URLs, status codes and content'),
-        list([
-          t('只用 GET 或 HEAD；不带 Cookie、Authorization 头或查询字符串；不跟随跳转；超时 10 秒。', 'GET or HEAD only; no cookies, Authorization header or query string; don’t follow redirects; 10 s timeout.'),
-          'User-Agent: dliu-status-bot/1.0 (+https://status.dliu.com/docs)',
-          t('S3 返回的 text/html 不带字符集，按前缀匹配内容类型；Markdown 是 text/markdown; charset=utf-8。', 'text/html from S3 has no charset, so match the content type by prefix; Markdown is text/markdown; charset=utf-8.'),
-          t('/api/trips/health/pdf 到达 PDF 函数，它在读取任何数据前就因为 ID 不是 8 位数字而返回 404。', '/api/trips/health/pdf reaches the PDF function, which answers 404 before reading anything because the id isn’t 8 digits.'),
-        ]),
-        table([t('功能', 'Function'), t('方法', 'Method'), 'URL', t('状态码', 'Status'), t('内容类型', 'Content type'), t('内容标记', 'Marker')], rows),
-      ),
-      more(t('/health 接口：格式、缓存和读取内容', '/health endpoint: format, caching and what it reads'),
-        list([
-          `GET ${SITE}/health (HEAD ${t('也可以', 'also works')})`,
-          t('CloudFront 不转发 Cookie、Authorization 头和查询字符串；函数在看任何请求数据之前就作答。', 'CloudFront forwards no cookies, Authorization header or query string; the function answers before it looks at any request data.'),
-          'Cache-Control: public, max-age=60 · ' + t('缓存键为空', 'empty cache key'),
-          'Content-Type: application/health+json · 200 = pass / warn · 503 = fail',
-          t('每项检查并行、各自 2 秒超时；超过 1 秒算 warn（output: slow）。output 只会是 slow、timeout 或 read failed。', 'Checks run in parallel, each with a 2 s timeout; over 1 s is warn (output: slow). output is only slow, timeout or read failed.'),
-        ]),
-        el('pre', '', json),
-        table([t('功能', 'Function'), t('读取内容', 'What it reads')], [
-          ['trips', t('DynamoDB GetItem 一个固定键 health-check（永远不是行程 ID）', 'DynamoDB GetItem of the fixed key health-check (never a travel plan id)')],
-          ['files', t('S3 HeadObject 一个所有行程目录之外的固定键；“不存在”说明存储桶有回应（不列目录、不下载）', 'S3 HeadObject of a fixed key outside every plan’s folder; “not found” proves the bucket answers (no LIST, no download)')],
-          ['signin', t('应用本来就会读取的 SSM 登录设置（缓存 5 分钟）；不调用 Microsoft', 'The SSM sign-in settings the app already loads (cached 5 minutes); Microsoft is not called')],
-        ]),
-      ),
+    page.append(section(t('每项功能有几项检查', 'Checks per function'),
+      barChart({
+        title: t('每次访问的检查数', 'Checks on every visit'),
+        series: [t('访客访问', 'Visits as a guest'), t('网站自查（/health）', 'The site’s self-check (/health)')],
+        rows: HEALTH_FUNCTIONS.map((f) => [name(f), [guestChecks(f.key), f.health ? 1 : 0]]),
+      }),
     ));
 
     page.append(section(t('哪些测不到', 'What isn’t tested'),
       el('p', '', t('访客测不到需要登录或分享链接的功能：', 'A guest can’t test anything that needs a sign-in or a share link:')),
       list([
-        t('在 Microsoft 登录并得到会话', 'signing in at Microsoft and getting a session'),
-        t('查看、新建、编辑、删除行程、日程和活动', 'listing, opening, creating, editing or deleting travel plans, days and events'),
+        t('在 Microsoft 登录并得到会话', 'signing in at Microsoft and staying signed in'),
+        t('查看、新建、编辑、删除行程、日程和活动', 'opening, creating, editing or deleting travel plans, days and events'),
         t('上传、打开、删除附件', 'uploading, opening or deleting attachments'),
         t('把真实行程导出为 PDF', 'exporting a real travel plan as a PDF'),
-        t('分享链接（创建、重置、用它打开行程）及其每日上限', 'share links (creating, resetting, opening a plan with one) and their daily limits'),
-        t('给 AI 代理用的托管 API（需要 Microsoft 访问令牌）', 'the managed API for agents, which needs a Microsoft access token'),
+        t('分享链接（创建、重置、用它打开行程）', 'share links (creating, resetting, opening a plan with one)'),
+        t('给工具和 AI 代理用的 API（需要 Microsoft 登录）', 'the API for tools and AI agents, which needs a Microsoft sign-in'),
       ]),
       callout('shield', t('测试只读，绝不会改动内容。', 'The tests are read only and never change content.')),
     ));
 
-    const md = el('p', 'source');
-    md.append(link('/docs/health.md', t('完整技术版本（Markdown）', 'Full technical version (Markdown)')));
-    page.append(md);
+    page.append(machineLink(t, '/docs/health.md'));
     return [tabs(t, '/docs#health'), page];
   }
 
-  return { architecture, cost, security, health, HEALTH_FUNCTIONS, HEALTH_ENDPOINT, GUEST_CHECKS };
+  // ---------------------------------------------------------------- API (/docs#api, for people)
+  // For people: what each endpoint is for and how sign-in works, in plain words. Exact requests, responses and errors
+  // are in web/docs/api.md. [route, scope, area, purpose]; keep equal to lambda/api/routes.json (test/managed-api.test.js).
+  const API_ROUTES = [
+    ['GET /api/me', 'trip.read', 'me', ['看令牌代表谁', 'See who the token belongs to']],
+    ['GET /api/trips', 'trip.read', 'plans', ['列出所有行程', 'List every travel plan']],
+    ['POST /api/trips', 'trip.write', 'plans', ['新建行程', 'Create a plan']],
+    ['GET /api/trips/{tripId}', 'trip.read', 'plans', ['读取一个行程的全部内容', 'Read one plan with its days, events and attachments']],
+    ['PUT /api/trips/{tripId}', 'trip.write', 'plans', ['修改行程详情', 'Change a plan’s details']],
+    ['DELETE /api/trips/{tripId}', 'trip.delete', 'plans', ['删除行程及其全部内容', 'Delete a plan with everything in it']],
+    ['POST /api/trips/{tripId}/events', 'trip.write', 'events', ['添加活动', 'Add an event']],
+    ['PUT /api/trips/{tripId}/events/{eventId}', 'trip.write', 'events', ['修改活动', 'Change an event']],
+    ['DELETE /api/trips/{tripId}/events/{eventId}', 'trip.delete', 'events', ['删除活动', 'Delete an event']],
+    ['POST /api/trips/{tripId}/files', 'trip.write', 'files', ['开始上传附件', 'Start uploading an attachment']],
+    ['GET /api/trips/{tripId}/files/{fileId}', 'trip.read', 'files', ['拿一个短时有效的下载链接', 'Get a short-lived download link']],
+    ['PUT /api/trips/{tripId}/files/{fileId}', 'trip.write', 'files', ['保留刚上传的附件，或改名', 'Keep a new upload, or rename one']],
+    ['DELETE /api/trips/{tripId}/files/{fileId}', 'trip.delete', 'files', ['删除附件', 'Delete an attachment']],
+    ['GET /api/trips/{tripId}/pdf', 'trip.read', 'pdf', ['把行程导出为 PDF', 'Export the plan as a PDF']],
+  ];
+  const API_SCOPES = [
+    ['trip.read', 'good', ['读取', 'Read'], ['查看所有行程、附件和 PDF', 'See every plan, its attachments and PDFs'], ['任何改动', 'Any change']],
+    ['trip.write', 'warn', ['修改', 'Write'], ['新建和修改行程、活动和附件', 'Create and change plans, events and attachments'], ['删除', 'Deleting']],
+    ['trip.delete', 'bad', ['删除', 'Delete'], ['删除行程、活动和附件', 'Delete plans, events and attachments'], ['读取或修改（要另外授予）', 'Reading or changing (granted separately)']],
+  ];
+  const API_AREAS = [
+    ['me', ['你是谁', 'Who you are']], ['plans', ['行程', 'Travel plans']], ['events', ['活动', 'Events']],
+    ['files', ['附件', 'Attachments']], ['pdf', ['PDF 导出', 'PDF export']],
+  ];
+
+  function api(t) {
+    const { flow, table, callout, stats } = D();
+    const scope = (key) => API_SCOPES.find(([s]) => s === key);
+    const page = el('article', 'dl-docs');
+    page.append(
+      el('h1', '', t('行程 API', 'Travel plan API')),
+      el('p', 'lead', t(
+        '人用网站；可信的工具、脚本和 AI 代理用这个 API 来读取和修改行程。它代表一位已登录的人工作，用的是 Microsoft 登录，而不是网站的登录或分享链接。',
+        'People use the website; trusted tools, scripts and AI agents use this API to read and change travel plans. It works for a signed-in person, with a Microsoft sign-in rather than the website’s sign-in or a share link.',
+      )),
+      stats([
+        [String(API_ROUTES.length), t('个接口', 'endpoints'), 'link'],
+        [String(API_SCOPES.length), t('种权限：读取、修改、删除', 'permissions: read, write, delete'), 'key'],
+        ['50 MB', t('单个附件上限', 'largest attachment'), 'upload'],
+        ['0', t('个令牌被保存', 'tokens kept by the site'), 'lock'],
+      ]),
+      flow({
+        title: t('登录和检查怎么进行', 'How sign-in and checks work'),
+        numbered: true,
+        steps: [
+          { icon: 'bot', title: t('你的工具或代理', 'Your tool or agent'), text: t('代表一位被允许使用 API 的人', 'Working for a person allowed to use the API') },
+          { icon: 'entra', title: t('Microsoft 登录', 'Microsoft sign-in'), text: t('拿到一个短时有效的 dliu API 访问令牌（见 auth.dliu.com）', 'Gets a short-lived access token for the dliu API (see auth.dliu.com)'), tone: 'edge' },
+          { icon: 'shield', title: t('网关检查', 'Gateway check'), text: t('令牌是真的吗？来自 dliu.com 组织、给这个 API、没过期、有这项权限？', 'Is the token real, from the dliu.com organisation, for this API, unexpired, with this permission?'), tone: 'edge' },
+          { icon: 'lambda', title: t('行程函数再查一遍', 'The travel plan function checks again'), text: t('批准的应用、dliu API user 角色、这项权限', 'The approved app, the dliu API user role, this permission'), tone: 'app' },
+          { icon: 'dynamodb', title: t('你的行程', 'Your travel plans'), text: t('读取或修改；改动会记下是谁做的', 'Read or changed; changes show who made them'), tone: 'private' },
+        ],
+        note: t('网站自己的登录和分享链接在这里无效；API 从不保存令牌。', 'The website’s own sign-in and share links don’t work here, and the API never keeps tokens.'),
+      }),
+      flow({
+        title: t('三种结果', 'Three possible answers'),
+        arrows: false,
+        steps: [
+          { icon: 'check', title: t('允许', 'Allowed'), text: t('真令牌、有角色、有权限：请求照办', 'Real token, role and permission: the request runs'), tone: 'good' },
+          { icon: 'key', title: t('缺少权限', 'Missing permission'), text: t('登录了，但没有角色或这项权限：拒绝', 'Signed in, but without the role or this permission: refused'), tone: 'warn', colour: '#b7791f' },
+          { icon: 'lock', title: t('没登录', 'Not signed in'), text: t('没有令牌，或令牌是假的、过期的：挡在门外', 'No token, or a fake or expired one: turned away'), tone: 'bad' },
+        ],
+      }),
+    );
+
+    page.append(section(t('有哪些接口', 'The endpoints'),
+      el('p', '', t('所有接口都在一个单独的 API 地址上（见机器版本），不在 plan.dliu.com 上。', 'All endpoints live on a separate API address (see the machine version), not on plan.dliu.com.')),
+      table([t('接口', 'Endpoint'), t('用来做什么', 'What it’s for'), t('需要的权限', 'Permission needed')],
+        API_ROUTES.map(([route, key, , purpose]) => {
+          const [, tone, label] = scope(key);
+          return [route, t(...purpose), { text: t(...label), tone }];
+        }),
+        'info-endpoints',
+        API_ROUTES.map(([route]) => ({ 'data-route': route })),
+      ),
+      barChart({
+        title: t('各部分的接口数', 'Endpoints per area'),
+        series: API_SCOPES.map(([, , label]) => t(...label)),
+        rows: API_AREAS.map(([area, label]) => [t(...label), API_SCOPES.map(([key]) => API_ROUTES.filter((r) => r[2] === area && r[1] === key).length)]),
+      }),
+    ));
+
+    page.append(section(t('三种权限', 'The three permissions'),
+      table([t('权限', 'Permission'), t('允许工具', 'Lets a tool'), t('不包括', 'Doesn’t include')],
+        API_SCOPES.map(([key, tone, label, allows, excludes]) => [`${t(...label)} (${key})`, { mark: '✓', tone: 'good', text: t(...allows) }, { mark: '✗', tone: 'bad', text: t(...excludes) }])),
+      el('p', '', t('只有网站主人分配了 dliu API user 角色的人才能用 API。其他成员照常用网站和分享链接，但登录网站并不会给他们 API 权限。', 'Only people the site owner assigns the dliu API user role can use the API. Other members keep using the website and share links, but signing in to the website gives them no API rights.')),
+    ));
+
+    page.append(section(t('上传附件', 'Uploading an attachment'),
+      flow({
+        title: t('文件不经过 API', 'Files never pass through the API'),
+        numbered: true,
+        steps: [
+          { icon: 'upload', title: t('申请上传位置', 'Ask for an upload slot'), text: t('API 检查文件名、大小和类型，给一个 15 分钟有效的一次性链接', 'The API checks the name, size and type, and gives a one-time link valid for 15 minutes'), tone: 'app' },
+          { icon: 'file', title: t('把文件发到存储', 'Send the file to storage'), text: t('直接发到附件存储', 'Straight to the attachment store'), tone: 'private' },
+          { icon: 'check', title: t('确认保留', 'Keep it'), text: t('确认后文件加入行程；没确认的上传一天后删除', 'Confirm, and the file joins the plan; unconfirmed uploads are deleted after a day'), tone: 'app' },
+        ],
+      }),
+    ));
+
+    page.append(section(t('数字上限', 'Limits in numbers'),
+      table([t('内容', 'What'), t('上限', 'Limit')], [
+        [t('一次请求', 'One request'), '64 KB'],
+        [t('一个附件', 'One attachment'), t('1 字节到 50 MB', '1 byte to 50 MB')],
+        [t('每个行程的附件', 'Attachments per plan'), t('200 个，共 1 GB', '200 files, 1 GB in total')],
+        [t('每个行程的活动', 'Events per plan'), '300'],
+        [t('一份 PDF', 'One PDF'), '4 MB'],
+        [t('上传链接', 'Upload link'), t('15 分钟', '15 minutes')],
+      ]),
+    ));
+
+    page.append(section(t('值得知道', 'Good to know'),
+      list([
+        t('行程没有单独的主人：有权限的工具能读取或修改每个行程，就像网站成员一样。', 'Plans have no single owner: a tool with access can read or change every plan, like a website member.'),
+        t('修改行程或活动会整体替换它，所以工具应先读取，只改要改的部分再送回。', 'Changing a plan or event replaces it whole, so a tool should read it first and send it back with only its change.'),
+        t('每个行程的分享链接用来在浏览器里看它的样子；把它当作密码，不要贴到别处。', 'A plan’s share link is for seeing how it looks in a browser; treat it like a password and don’t post it anywhere.'),
+        t('只在被要求时才修改或删除；不要为了试令牌而运行修改操作。', 'Only change or delete when asked to; don’t run changes just to try a token.'),
+      ]),
+      callout('shield', t('网站自己的登录仍只接受 @dliu.com 账户，并且不接受 API 令牌。', 'The website’s own sign-in still only accepts @dliu.com accounts and doesn’t accept API tokens.')),
+    ));
+
+    const auth = el('p', 'source');
+    auth.append(t('怎么拿到令牌：', 'How to get a token: '), link('https://auth.dliu.com/docs/api', 'auth.dliu.com', true));
+    page.append(auth, machineLink(t, '/docs/api.md'));
+    return [tabs(t, '/docs#api'), page];
+  }
+
+  return { architecture, cost, security, api, health, HEALTH_FUNCTIONS, HEALTH_ENDPOINT, GUEST_CHECKS, API_ROUTES };
 })();

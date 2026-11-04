@@ -194,8 +194,21 @@ textarea { resize: vertical; min-height: 4.5rem; }
 .pentest td:last-child { white-space: nowrap; }
 .info-card-key { margin-top: 4px; font-weight: 650; color: var(--dl-accent); }
 
-/* /docs/api: inline code in table cells stays on one line */
-.dl-docs td code { white-space: nowrap; }
+/* Testing and API tabs: a red "not working" mark next to the shared green .status, and simple bar charts. */
+.dl-docs .info-bad { color: var(--dl-danger); font-weight: 650; white-space: nowrap; }
+.info-endpoints th[scope="row"] { white-space: nowrap; font-weight: 600; }
+.info-chart { margin: 16px 0 0; padding: 16px 18px; border: 1px solid var(--dl-line); border-radius: var(--dl-radius); background: var(--dl-surface); }
+.info-chart figcaption { font-weight: 650; margin-bottom: 6px; }
+.info-chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; font-size: 14px; color: var(--dl-muted); }
+.info-chart-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.info-chart-swatch { width: 12px; height: 12px; border-radius: 3px; }
+.info-chart-row { display: grid; grid-template-columns: minmax(96px, 30%) 1fr 2.5em; align-items: center; gap: 10px; margin: 8px 0; font-size: 14px; }
+.info-chart-bar { display: flex; height: 18px; border-radius: 999px; overflow: hidden; background: var(--dl-panel); }
+.info-chart-bar > span { height: 100%; }
+.info-chart-total { text-align: right; }
+.info-chart-s0 { background: var(--dl-accent); }
+.info-chart-s1 { background: var(--dl-ok); }
+.info-chart-s2 { background: var(--dl-danger); }
 
 @media (max-width: 520px) {
   .post-head h1 { font-size: 1.9rem; }

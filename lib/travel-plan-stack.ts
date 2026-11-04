@@ -26,6 +26,7 @@ import {
   StackProps,
 } from 'aws-cdk-lib';
 import apiRoutes from '../lambda/api/routes.json';
+import { versionAssets } from './asset-version';
 
 const ROOT = path.join(__dirname, '..');
 const LOG_RETENTION = logs.RetentionDays.THREE_MONTHS;
@@ -42,10 +43,10 @@ export const MANAGED_API_BURST = 20;
 // Link-preview bots (WhatsApp, iMessage, Telegram, Slack, Teams…) get a bare page with the
 // title and no images, so chats show a plain link instead of a big icon card.
 export const PREVIEW_BOTS = /WhatsApp|facebookexternalhit|Facebot|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|redditbot|Pinterest|vkShare|Viber/i;
-// Docs: /docs (technical architecture, and the Testing tab at /docs#health), /docs/cost and /docs/security are app-shell
-// pages, /docs/api has its own page. The old /about, /security and /docs/health addresses move there for good (301),
-// keeping any query string (placed before a #fragment).
-export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security', '/docs/health': '/docs#health' };
+// Docs: /docs (architecture, and the API and Testing tabs at /docs#api and /docs#health), /docs/cost and /docs/security
+// are app-shell pages. The old /about, /security, /docs/api and /docs/health addresses move there for good (301),
+// keeping any query string (placed before a #fragment). /docs/api.md is a different path and is served as is.
+export const DOCS_MOVED: Record<string, string> = { '/about': '/docs', '/security': '/docs/security', '/docs/api': '/docs#api', '/docs/health': '/docs#health' };
 export const REWRITE_FUNCTION_CODE = `function handler(event) {
   var request = event.request;
   var uri = request.uri;
@@ -64,10 +65,6 @@ export const REWRITE_FUNCTION_CODE = `function handler(event) {
     var fragment = hash < 0 ? '' : target.substring(hash);
     return { statusCode: 301, statusDescription: 'Moved Permanently',
       headers: { location: { value: base + (query.length ? '?' + query.join('&') : '') + fragment }, 'cache-control': { value: 'max-age=86400' } } };
-  }
-  if (path === '/docs/api') {
-    request.uri = '/docs-api.html';
-    return request;
   }
   var page = uri === '/' || uri === '/index.html' || uri.indexOf('/plan/') === 0 || uri.indexOf('/trips/') === 0 || uri.indexOf('/s/') === 0
     || path === '/docs' || path === '/docs/cost' || path === '/docs/security';
@@ -110,7 +107,7 @@ export const API_DOCS = 'docs/api.md';
 // How status.dliu.com tests the site, for machines (the people's version is the Testing tab, /docs#health).
 export const HEALTH_DOCS = 'docs/health.md';
 export const MARKDOWN = 'docs/*.md';
-// The HTML shells (app and API docs page) are never edge-cached for long; everything else under web/ is.
+// The HTML shell (index.html) is never edge-cached for long; everything else under web/ is.
 export const SITE_PAGES = '*.html';
 export const STATIC_CACHE_CONTROL = ['public', 'max-age=300', 's-maxage=86400', 'stale-while-revalidate=86400'];
 export const API_URL_MARKER = '__TRIP_API_URL__';
@@ -443,9 +440,11 @@ export class TravelPlanStack extends Stack {
       distributionPaths: ['/*'],
       cacheControl: STATIC_CACHE_CONTROL.map((directive) => s3deploy.CacheControl.fromString(directive)),
     });
-    // The HTML shells stay no-cache: browsers revalidate (cheap 304s) so a deploy takes effect on the next load.
+    // The HTML shell stays no-cache: browsers revalidate (cheap 304s) so a deploy takes effect on the next load,
+    // and its script and style URLs carry a content hash, so it never runs with an older cached script.
+    const webDir = path.join(ROOT, 'web');
     new s3deploy.BucketDeployment(this, 'SitePages', {
-      sources: [s3deploy.Source.asset(path.join(ROOT, 'web'), { exclude: [MARKDOWN] })],
+      sources: [s3deploy.Source.data('index.html', versionAssets(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'), webDir))],
       destinationBucket: siteBucket,
       exclude: ['*'],
       include: [SITE_PAGES],

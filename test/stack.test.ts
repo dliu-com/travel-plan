@@ -1,5 +1,10 @@
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { versionAssets } from '../lib/asset-version';
 import { MANAGED_API_BURST, MANAGED_API_RATE, REWRITE_FUNCTION_CODE, TravelPlanStack } from '../lib/travel-plan-stack';
 
 const env = { account: '123456789012', region: 'eu-west-1' };
@@ -190,29 +195,22 @@ test('attachments live in a private bucket that only accepts uploads from the si
   });
 });
 
-test('the API docs page is served at /docs/api', () => {
-  // eslint-disable-next-line no-new-func
-  const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
-  const uri = (u: string) => handler({ request: { uri: u } }).uri;
-  expect(uri('/docs/api')).toBe('/docs-api.html');
-  expect(uri('/docs/api/')).toBe('/docs-api.html');
-  expect(uri('/docs/api.md')).toBe('/docs/api.md');
-});
-
-test('the old /about, /security and /docs/health addresses move to /docs for good, keeping the query', () => {
+test('the old /about, /security, /docs/api and /docs/health addresses move to /docs for good, keeping the query', () => {
   // eslint-disable-next-line no-new-func
   const handler = new Function(`${REWRITE_FUNCTION_CODE}; return handler;`)();
   const visit = (uri: string, querystring = {}) => handler({ request: { uri, querystring } });
-  for (const [from, to] of [['/about', '/docs'], ['/about/', '/docs'], ['/security', '/docs/security'], ['/security/', '/docs/security'], ['/docs/health', '/docs#health'], ['/docs/health/', '/docs#health']]) {
+  for (const [from, to] of [['/about', '/docs'], ['/about/', '/docs'], ['/security', '/docs/security'], ['/security/', '/docs/security'], ['/docs/api', '/docs#api'], ['/docs/api/', '/docs#api'], ['/docs/health', '/docs#health'], ['/docs/health/', '/docs#health']]) {
     const res = visit(from);
     expect(res.statusCode).toBe(301);
     expect(res.headers.location.value).toBe(to);
   }
   expect(visit('/about', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh');
   expect(visit('/security', { a: { value: '1', multiValue: [{ value: '1' }, { value: '2' }] } }).headers.location.value).toBe('/docs/security?a=1&a=2');
-  // The query goes before the Testing tab's #fragment.
+  // The query goes before the Health tab's #fragment.
   expect(visit('/docs/health', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh#health');
+  expect(visit('/docs/api', { lang: { value: 'zh' } }).headers.location.value).toBe('/docs?lang=zh#api');
   expect(visit('/docs/health.md').uri).toBe('/docs/health.md');
+  expect(visit('/docs/api.md').uri).toBe('/docs/api.md');
   // Only a fixed same-site path is ever used, so the redirect can't be pointed elsewhere.
   expect(visit('//evil.example/about').uri).toBe('//evil.example/about');
 });
@@ -326,6 +324,36 @@ test('static files are edge-cached for a day, HTML shells are never cached long'
   for (const behavior of distribution.Properties.DistributionConfig.CacheBehaviors.filter((b: any) => b.PathPattern !== 'health')) {
     expect(behavior.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   }
+});
+
+test('the page loads its scripts and styles by content hash, so a new page never runs an old cached script', () => {
+  const webDir = path.join(__dirname, '..', 'web');
+  const html = versionAssets(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'), webDir);
+  const local = [...html.matchAll(/(?:src|href)="(\/[\w.-]+\.(?:js|css)[^"]*)"/g)].map((m) => m[1]);
+  expect(local.map((url) => url.split('?')[0]).sort()).toEqual(['/app.js', '/calendar.js', '/diagram.js', '/info.js', '/style.css']);
+  for (const url of local) {
+    const [file, query] = url.slice(1).split('?v=');
+    const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(webDir, file))).digest('hex').slice(0, 12);
+    expect(query).toBe(hash);
+  }
+  // Shared files.dliu.com styles keep their own versioned path.
+  expect(html).toContain('href="https://files.dliu.com/dliu.com/ui/v1/dl.css"');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-assets-'));
+  const page = '<script src="/app.js" defer></script><link rel="stylesheet" href="/style.css">';
+  fs.writeFileSync(path.join(dir, 'app.js'), 'old'); fs.writeFileSync(path.join(dir, 'style.css'), 'a{}');
+  const before = versionAssets(page, dir);
+  fs.writeFileSync(path.join(dir, 'app.js'), 'new');
+  const after = versionAssets(page, dir);
+  expect(after).not.toBe(before);
+  expect(after.match(/style\.css\?v=\w+/)![0]).toBe(before.match(/style\.css\?v=\w+/)![0]);
+  fs.rmSync(dir, { recursive: true });
+
+  // The deployed shell is exactly this versioned copy.
+  const pages = Object.values(template.findResources('Custom::CDKBucketDeployment')).map((r: any) => r.Properties)
+    .find((d: any) => d.Include && d.Include[0] === '*.html');
+  expect(pages.SourceMarkers).toEqual([{}]);
+  expect(pages.SourceObjectKeys).toHaveLength(1);
 });
 
 test('both functions log JSON without per-call platform lines, kept for three months', () => {

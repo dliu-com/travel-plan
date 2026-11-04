@@ -21,6 +21,7 @@ const { uploadKey } = require('../lambda/api/s3');
 const { routeKey } = require('../scripts/api-client');
 const { createMemoryFiles } = require('../scripts/memory-files');
 const { createMemoryStore } = require('../scripts/memory-store');
+const { renderDocs, EXACT } = require('./docs-dom');
 
 const NOW = Date.UTC(2026, 9, 1);
 const config = { tenantId: 'tenant', clientId: 'client', clientSecret: 'secret', allowedDomain: 'dliu.com' };
@@ -497,43 +498,38 @@ describe('API docs', () => {
     expect(docs).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
   });
 
-  test('render safely as HTML-free nodes', () => {
-    const { render } = loadRenderer();
-    const root = render(docs);
-    // The page's <h1> is the document title; its sections are h2 and below.
-    expect(root.querySelectorAll('h1').length).toBe(0);
-    expect(root.querySelectorAll('h2').length).toBeGreaterThan(5);
-    expect(root.querySelectorAll('table').length).toBeGreaterThan(2);
-    expect(root.querySelectorAll('pre').length).toBeGreaterThan(2);
-    const evil = render('Hello <img src=x onerror=alert(1)> [x](javascript:alert(1)) `code`');
-    expect(evil.querySelectorAll('img, a').length).toBe(0);
+  test('/docs#api is the API tab for people: flows, numbers, tables and a chart, every managed route', () => {
+    const { root, info } = renderDocs('api');
+    const tabs = root.all((n) => n.has('dl-tabs'))[0];
+    expect(tabs.all((n) => n.attributes['aria-current'] === 'page').map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs#api', 'API']]);
+    // The endpoint table lists exactly the managed routes, each with its permission.
+    expect(info.API_ROUTES.map(([route, scope]) => [route, scope])).toEqual(Object.entries(ROUTES).map(([key, { scope }]) => [key, scope]));
+    const rows = root.all((n) => n.attributes['data-route']);
+    expect(rows.map((n) => n.attributes['data-route'])).toEqual(Object.keys(ROUTES));
+    const permission = { 'trip.read': 'Read', 'trip.write': 'Write', 'trip.delete': 'Delete' };
+    for (const row of rows) expect(row.all((n) => n.tagName === 'span').map((n) => n.textContent)).toEqual([permission[ROUTES[row.attributes['data-route']].scope]]);
+    const stats = root.all((n) => n.has('dg-stat')).map((n) => n.textContent);
+    expect(stats[0]).toBe(`${Object.keys(ROUTES).length}endpoints`);
+    expect(stats.length).toBeGreaterThanOrEqual(4);
+    const flows = root.all((n) => n.has('dg-flow'));
+    expect(flows).toHaveLength(3);
+    for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[1].all((n) => n.has(tone))).toHaveLength(1);
+    const chart = root.all((n) => n.has('info-chart'))[0];
+    expect(chart.all((n) => n.has('info-chart-total')).map((n) => Number(n.textContent)).reduce((a, b) => a + b)).toBe(Object.keys(ROUTES).length);
+    expect(root.textContent).toContain('dliu API user');
+  });
+
+  test('/docs#api has high-level details only and ends with the Markdown link', () => {
+    for (const language of ['en', 'zh']) {
+      const { root } = renderDocs('api', language);
+      expect(root.all((n) => ['details', 'code', 'pre'].includes(n.tagName))).toEqual([]);
+      for (const pattern of EXACT) expect(root.textContent).not.toMatch(pattern);
+      const article = root.children[1];
+      const md = root.all((n) => n.attributes.href === '/docs/api.md');
+      expect(md).toHaveLength(1);
+      expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual(md);
+      expect(md[0].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
+      expect(root.all((n) => n.attributes.href === 'https://auth.dliu.com/docs/api')).toHaveLength(1);
+    }
   });
 });
-
-// docs-api.js is a browser script; give it a tiny DOM so it can run here.
-function loadRenderer() {
-  class Node {
-    constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; }
-    setAttribute(name, value) { this.attrs[name] = value; }
-    append(...items) { this.children.push(...items); }
-    querySelectorAll(selector) {
-      const tags = selector.split(',').map((s) => s.trim());
-      const found = [];
-      const walk = (node) => {
-        for (const child of node.children) {
-          if (child instanceof Node) {
-            if (tags.includes(child.tag)) found.push(child);
-            walk(child);
-          }
-        }
-      };
-      walk(this);
-      return found;
-    }
-  }
-  const module = { exports: {} };
-  const document = { createElement: (tag) => new Node(tag) };
-  // eslint-disable-next-line no-new-func
-  new Function('module', 'document', fs.readFileSync(path.join(__dirname, '../web/docs-api.js'), 'utf8'))(module, document);
-  return module.exports;
-}

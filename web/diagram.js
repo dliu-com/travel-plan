@@ -152,10 +152,12 @@ window.PlanDiagram = (() => {
   }
 
   // The shared dl-docs result colours.
-  const TONES = { pass: 'status', fixed: 'status', low: 'risk-low', medium: 'risk-medium' };
+  // good / warn / bad: working, slow or partial, not working (info-bad is the app's red).
+  const TONES = { pass: 'status', fixed: 'status', low: 'risk-low', medium: 'risk-medium', good: 'status', warn: 'risk-medium', bad: 'info-bad' };
 
-  // rows: arrays of cells; a cell is text or { text, tone } for a coloured result.
-  function table(head, rows, className = '') {
+  // rows: arrays of cells; a cell is text, { text, tone } for a coloured result, or { mark, tone, text } for a
+  // coloured mark before plain text. rowAttrs[i] adds attributes to row i.
+  function table(head, rows, className = '', rowAttrs = []) {
     const wrap = el('div', 'table-wrap');
     const tableEl = el('table', className);
     const thead = el('thead');
@@ -163,17 +165,19 @@ window.PlanDiagram = (() => {
     for (const cell of head) headRow.append(el('th', '', cell));
     thead.append(headRow);
     const tbody = el('tbody');
-    for (const row of rows) {
+    rows.forEach((row, rowIndex) => {
       const tr = el('tr');
+      for (const [name, value] of Object.entries(rowAttrs[rowIndex] || {})) tr.setAttribute(name, value);
       row.forEach((cell, index) => {
         const td = el(index === 0 ? 'th' : 'td');
         if (index === 0) td.scope = 'row';
-        if (cell && typeof cell === 'object') td.append(el('span', TONES[cell.tone], cell.text));
+        if (cell && typeof cell === 'object' && cell.mark) td.append(el('span', TONES[cell.tone], cell.mark), ` ${cell.text}`);
+        else if (cell && typeof cell === 'object') td.append(el('span', TONES[cell.tone], cell.text));
         else td.textContent = cell;
         tr.append(td);
       });
       tbody.append(tr);
-    }
+    });
     tableEl.append(thead, tbody);
     wrap.append(tableEl);
     return wrap;

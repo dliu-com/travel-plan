@@ -6,7 +6,7 @@ const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
 const DL_CSS = '<link rel="stylesheet" href="https://files.dliu.com/dliu.com/ui/v1/dl.css">';
 const DL_DOCS_CSS = '<link rel="stylesheet" href="https://files.dliu.com/dliu.com/ui/v1/dl-docs.css">';
 const DL_ICON = 'https://files.dliu.com/dliu.com/favicon.png';
-const PAGES = ['index', 'docs-api'];
+const PAGES = ['index'];
 
 test('every page loads the shared stylesheets before its own', () => {
   for (const html of PAGES) {
@@ -50,11 +50,7 @@ test('the app uses the shared language switcher, last in the menu', () => {
 });
 
 test('docs pages use the shared docs layout and tabs', () => {
-  const page = read('web/docs-api.html');
-  expect(page).toContain('<main class="dl-main dl-docs-main" id="main">');
-  expect(page).toContain('<nav class="dl-tabs" aria-label="Docs sections" data-label-zh="文档章节" data-label-en="Docs sections">');
-  expect(page).toContain('<article class="dl-docs">');
-  // /docs, /docs/cost and /docs/security are rendered into the app shell with the same pieces.
+  // Every docs tab is rendered into the app shell.
   const info = read('web/info.js');
   expect(info).toContain("el('nav', 'dl-tabs')");
   expect(info).toContain("t('文档章节', 'Docs sections')");

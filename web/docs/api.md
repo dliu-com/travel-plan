@@ -1,6 +1,6 @@
 # Travel plan API
 
-This reference is for trusted tools, scripts and AI agents managing travel plans on https://plan.dliu.com. The same guide is available as plain Markdown at https://plan.dliu.com/docs/api.md.
+This reference is for trusted tools, scripts and AI agents managing travel plans on https://plan.dliu.com. This plain Markdown file (https://plan.dliu.com/docs/api.md) is the full reference; people get a plain-language overview in the API tab at https://plan.dliu.com/docs#api.
 
 The managed API accepts Microsoft-issued user access tokens. It can list and read travel plans, create and edit plans, events and attachments, export PDFs, and delete plans, events and attachments when the token has the corresponding permission.
 

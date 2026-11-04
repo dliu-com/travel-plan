@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Calls the travel plan managed API with a Microsoft access token from auth.dliu.com (see /docs/api).
+// Calls the travel plan managed API with a Microsoft access token from auth.dliu.com (see /docs/api.md).
 // It never signs in, creates or writes credentials, follows redirects, prints presigned storage URLs,
 // or sends the bearer token anywhere except the managed API origin.
 const fs = require('node:fs');
@@ -25,7 +25,7 @@ const TYPES = {
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 function readConfig(env = process.env) {
-  if (!env.TRIP_API_URL) throw new Error('Set TRIP_API_URL to the managed API origin from https://plan.dliu.com/docs/api');
+  if (!env.TRIP_API_URL) throw new Error('Set TRIP_API_URL to the managed API origin from https://plan.dliu.com/docs/api.md');
   const endpoint = new URL(env.TRIP_API_URL);
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password ||
       endpoint.pathname !== '/' || endpoint.search || endpoint.hash) {

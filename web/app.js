@@ -171,7 +171,7 @@
       : [el('a', { class: 'dl-button dl-signin', href: `/auth/login?return=${encodeURIComponent(location.pathname)}`, text: t('登录', 'Sign in') })]));
   }
 
-  // narrow: lists and trips; wide: the calendar; docs: /docs (and its #health Testing tab), /docs/cost and /docs/security.
+  // narrow: lists and trips; wide: the calendar; docs: /docs (and its #health Health tab), /docs/cost and /docs/security.
   function setLayout(kind) {
     main.classList.toggle('dl-narrow', kind === 'narrow');
     main.classList.toggle('dl-docs-main', kind === 'docs');
@@ -1132,7 +1132,9 @@
   const LEGACY_IDS = { 'spain-ibiza-67mrt9qxtc': '20261000' };
 
   // The docs pages are public; the account line still shows who is signed in.
-  const DOCS_TITLES = { architecture: ['技术架构', 'Technical architecture'], cost: ['运行成本', 'Cost'], security: ['安全', 'Security'], health: ['网站怎么被测试', 'How the site is tested'] };
+  const DOCS_TITLES = { architecture: ['架构', 'Architecture'], cost: ['运行成本', 'Cost'], security: ['安全', 'Security'], api: ['行程 API', 'Travel plan API'], health: ['网站怎么被测试', 'How the site is tested'] };
+  // Tabs on /docs itself: /docs#api and /docs#health.
+  const DOCS_HASH = { '#api': 'api', '#health': 'health' };
   function renderInfo(page) {
     state.trip = null;
     show(...window.PlanInfo[page](t));
@@ -1146,7 +1148,7 @@
     markNav(info && 'docs');
     setLayout(info ? 'docs' : 'narrow');
     if (info) {
-      renderInfo(info[1] || (location.hash === '#health' ? 'health' : 'architecture'));
+      renderInfo(info[1] || DOCS_HASH[location.hash] || 'architecture');
       return;
     }
     const legacyShare = path.match(/^\/s\/([A-Za-z0-9_-]{24})\/?$/);
@@ -1245,10 +1247,10 @@
   });
   applyLanguage();
 
-  // The Testing tab is /docs#health: switching between it and /docs (tab click, back, forward) only changes the hash.
+  // The Health tab is /docs#health: switching between it and /docs (tab click, back, forward) only changes the hash.
   window.addEventListener('hashchange', () => {
     if (/^\/docs\/?$/.test(location.pathname)) {
-      renderInfo(location.hash === '#health' ? 'health' : 'architecture');
+      renderInfo(DOCS_HASH[location.hash] || 'architecture');
       window.scrollTo(0, 0);
     }
   });

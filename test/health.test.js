@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
+const { renderDocs, EXACT } = require('./docs-dom');
 const { createHandler } = require('../lambda/api/index');
 const { FUNCTIONS, CHECK_TIMEOUT_MS, health, probesFor } = require('../lambda/api/health');
 const { createFiles } = require('../lambda/api/s3');
@@ -112,76 +112,66 @@ test('the default checks are one GetItem of a fixed key and one HeadObject outsi
   await expect(denied.reachable('health-check')).rejects.toThrow();
 });
 
-// ------------------------------------------------------------------ /docs#health, the Testing tab (rendered with a tiny DOM)
-class Node {
-  constructor(tag) {
-    this.tagName = tag;
-    this.attributes = {};
-    this.children = [];
-    this.style = { setProperty() {} };
-  }
-  set className(value) { this.attributes.class = value; }
-  get className() { return this.attributes.class || ''; }
-  set href(value) { this.attributes.href = value; }
-  set rel(value) { this.attributes.rel = value; }
-  set scope(value) { this.attributes.scope = value; }
-  set textContent(value) { this.children = [String(value)]; }
-  get textContent() { return this.children.map((c) => (typeof c === 'string' ? c : c.textContent)).join(''); }
-  setAttribute(key, value) { this.attributes[key] = String(value); }
-  append(...nodes) { this.children.push(...nodes.map((n) => (n instanceof Node ? n : String(n)))); }
-  all(test, out = []) {
-    for (const child of this.children) if (child instanceof Node) { if (test(child)) out.push(child); child.all(test, out); }
-    return out;
-  }
-  has(cls) { return this.className.split(' ').includes(cls); }
-}
+// ------------------------------------------------------------------ /docs#health, the Health tab (rendered with a tiny DOM)
+const renderHealth = (language) => renderDocs('health', language);
 
-function renderHealth() {
-  const root = new Node('root');
-  const window = {};
-  const document = { createElement: (tag) => new Node(tag), createElementNS: (ns, tag) => new Node(tag) };
-  const context = vm.createContext({ window, document });
-  vm.runInContext(read('web/diagram.js'), context);
-  vm.runInContext(read('web/info.js'), context);
-  root.append(...window.PlanInfo.health((zh, en) => en));
-  return { root, info: window.PlanInfo };
-}
-
-test('/docs#health is the Testing tab with a diagram of how the site is tested', () => {
+test('/docs#health is the Health tab with flows of how the site is tested', () => {
   const { root } = renderHealth();
   const tabs = root.all((n) => n.has('dl-tabs'))[0];
   const current = tabs.all((n) => n.attributes['aria-current'] === 'page');
-  expect(current.map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs#health', 'Testing']]);
+  expect(current.map((n) => [n.attributes.href, n.textContent])).toEqual([['/docs#health', 'Health']]);
   const flows = root.all((n) => n.has('dg-flow'));
-  expect(flows.length).toBeGreaterThanOrEqual(2);
-  expect(root.all((n) => n.has('dg-step')).length).toBeGreaterThanOrEqual(6);
-  expect(root.all((n) => n.has('dg-arrow')).length).toBeGreaterThanOrEqual(3);
-  for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(root.all((n) => n.has(tone))).toHaveLength(1);
+  expect(flows).toHaveLength(2);
+  expect(flows[0].all((n) => n.has('dg-step'))).toHaveLength(5);
+  expect(flows[0].all((n) => n.has('dg-arrow'))).toHaveLength(4);
+  for (const tone of ['dg-good', 'dg-warn', 'dg-bad']) expect(flows[1].all((n) => n.has(tone))).toHaveLength(1);
+  expect(flows[1].all((n) => n.has('dg-arrow'))).toHaveLength(0);
   expect(root.textContent).toContain('status.dliu.com');
   expect(root.textContent).toContain('What isn’t tested');
 });
 
-test('/docs#health opens the Testing tab on load and when only the hash changes', () => {
-  const app = read('web/app.js');
-  expect(app).toContain("renderInfo(info[1] || (location.hash === '#health' ? 'health' : 'architecture'));");
-  expect(app).toContain("window.addEventListener('hashchange', () => {");
-  expect(app).not.toMatch(/cost\|security\|health/);
+test('/docs#health shows numbers, a plain-words table and a chart', () => {
+  const { root, info } = renderHealth();
+  const stats = root.all((n) => n.has('dg-stat')).map((n) => n.textContent);
+  expect(stats).toEqual(['7functions tested', '11checks on every visit', '15 minbetween visits', '3places: Ireland, Virginia, Tokyo']);
+  expect(info.HEALTH_FUNCTIONS).toHaveLength(7);
+  expect(info.GUEST_CHECKS.length + info.HEALTH_ENDPOINT.length).toBe(11);
+  const rows = root.all((n) => n.attributes['data-function']);
+  for (const row of rows) {
+    const cells = row.all((n) => n.tagName === 'td' || n.tagName === 'th');
+    expect(cells).toHaveLength(5);
+    expect(cells[2].all((n) => n.has('status')).map((n) => n.textContent)).toEqual(['✓']);
+    expect(cells[4].all((n) => n.has('info-bad')).map((n) => n.textContent)).toEqual(['✗']);
+  }
+  // One bar per function; guest visits plus the self-check add up to the 11 checks.
+  const chart = root.all((n) => n.has('info-chart'))[0];
+  expect(chart.attributes.role).toBe('img');
+  const totals = chart.all((n) => n.has('info-chart-total')).map((n) => Number(n.textContent));
+  expect(totals).toEqual([2, 2, 3, 1, 1, 1, 1]);
+  expect(totals.reduce((a, b) => a + b)).toBe(11);
+  expect(chart.attributes['aria-label']).toContain('Microsoft sign-in 3');
 });
 
-test('/docs#health folds every technical detail in closed <details> and links the Markdown', () => {
-  const { root } = renderHealth();
-  const details = root.all((n) => n.tagName === 'details');
-  expect(details.length).toBeGreaterThanOrEqual(2);
-  for (const d of details) expect(d.attributes.open).toBeUndefined();
-  const folded = details.map((d) => d.textContent).join('\n');
-  const unfolded = (node) => node.children.map((c) => (typeof c === 'string' ? c : c.tagName === 'details' ? '' : unfolded(c))).join('\n');
-  const outside = unfolded(root);
-  for (const detail of ['application/health+json', 'max-age=60', 'https://plan.dliu.com/auth/login', '302', '"status": "pass"', 'User-Agent', 'GetItem', 'HeadObject']) {
-    expect(folded).toContain(detail);
-    expect(outside).not.toContain(detail);
+test('/docs#health keeps high-level details (which page or endpoint) but no exact ones, and ends with the Markdown link', () => {
+  for (const language of ['en', 'zh']) {
+    const { root } = renderHealth(language);
+    expect(root.all((n) => ['details', 'code', 'pre'].includes(n.tagName))).toEqual([]);
+    for (const pattern of EXACT) expect(root.textContent).not.toMatch(pattern);
+    for (const endpoint of ['/health', '/api/me', '/auth/login', '/api/trips']) expect(root.textContent).toContain(endpoint);
+    const article = root.children[1];
+    const md = root.all((n) => n.attributes.href === '/docs/health.md');
+    expect(md).toHaveLength(1);
+    expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual(md);
+    expect(md[0].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
   }
-  const md = root.all((n) => n.attributes.href === '/docs/health.md');
-  expect(md.map((n) => n.textContent)).toEqual(['Full technical version (Markdown)']);
+});
+
+test('/docs#health and /docs#api open on load and when only the hash changes', () => {
+  const app = read('web/app.js');
+  expect(app).toContain("const DOCS_HASH = { '#api': 'api', '#health': 'health' };");
+  expect(app).toContain("renderInfo(info[1] || DOCS_HASH[location.hash] || 'architecture');");
+  expect(app).toContain("window.addEventListener('hashchange', () => {");
+  expect(app).toContain("renderInfo(DOCS_HASH[location.hash] || 'architecture');");
 });
 
 // ------------------------------------------------------------------ keys and checks stay in sync
@@ -207,7 +197,7 @@ test('/docs/health.md is the full technical version and is served as Markdown', 
   expect(read('lib/travel-plan-stack.ts')).toContain("export const HEALTH_DOCS = 'docs/health.md';");
 });
 
-test('function keys match across /docs/health, /docs/health.md and /health', () => {
+test('function keys match across /docs#health, /docs/health.md and /health', () => {
   const { root, info } = renderHealth();
   const pageKeys = root.all((n) => n.attributes['data-function']).map((n) => n.attributes['data-function']);
   expect(pageKeys).toEqual(info.HEALTH_FUNCTIONS.map((f) => f.key));
@@ -221,11 +211,9 @@ test('function keys match across /docs/health, /docs/health.md and /health', () 
   expect(mdTable('| Function key | What the check reads |').map((r) => r[0])).toEqual(KEYS);
   const sample = JSON.parse(markdown.match(/```json\n([\s\S]*?)```/)[1]);
   expect(sample.functions.map((f) => [f.key, f.name])).toEqual(FUNCTIONS.map((f) => [f.key, f.name]));
-  const pageSample = JSON.parse(root.all((n) => n.tagName === 'pre')[0].textContent);
-  expect(pageSample.functions.map((f) => [f.key, f.name])).toEqual(FUNCTIONS.map((f) => [f.key, f.name]));
 });
 
-test('guest checks match between /docs/health and /docs/health.md', () => {
+test('guest checks match between web/info.js and /docs/health.md', () => {
   const { info } = renderHealth();
   const md = mdTable('## Guest checks').map(([key, method, url, status, type, marker]) => [key, method, url, status, type, marker]);
   const page = info.GUEST_CHECKS.map(([key, method, p, status, type, marker]) => [key, method, `https://plan.dliu.com${p}`, status, type, marker]);

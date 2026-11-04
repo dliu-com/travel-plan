@@ -22,23 +22,17 @@ test('the app header keeps Sign in / Sign out between Docs and the language swit
   expect(app).toContain("class: 'dl-account'");
 });
 
-test('the API docs page header has the Docs button, marked current, and the language switch', () => {
-  const html = siteNav(web('docs-api.html'));
-  const nav = links(html);
-  expect(nav.map((a) => [a.href, a.text])).toEqual([['/docs', 'Docs']]);
-  expect(nav[0].attrs).toContain('aria-current="page"');
-  expect(html.trim().endsWith('</div></div>')).toBe(true);
-  expect(html).toContain('<div class="dl-language"><button type="button" class="dl-button dl-language-toggle" aria-controls="dl-languages"');
-  expect(web('docs-api.js')).toContain("localStorage.getItem(KEY)");
-  expect(web('docs-api.js')).toContain("const KEY = 'plan-language';");
+test('every docs page is the app shell, so it has the same header, language switch and footer', () => {
+  // /docs/api and /docs/health are now tabs on /docs (#api, #health); there is no separate docs page.
+  expect(fs.existsSync(path.join(__dirname, '..', 'web', 'docs-api.html'))).toBe(false);
+  expect(fs.existsSync(path.join(__dirname, '..', 'web', 'docs-api.js'))).toBe(false);
   expect(web('app.js')).toContain("const LANGUAGE_KEY = 'plan-language';");
 });
 
 test('every docs page has the same five tabs in the same order', () => {
-  const want = [['/docs', 'Technical architecture'], ['/docs/cost', 'Cost'], ['/docs/security', 'Security'], ['/docs/api', 'API'], ['/docs#health', 'Testing']];
-  const html = web('docs-api.html').match(/<nav class="dl-tabs"[^>]*>([\s\S]*?)<\/nav>/)[1];
-  expect([...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(([, href, text]) => [href, text])).toEqual(want);
-  expect(web('info.js')).toContain("[['/docs', t('技术架构', 'Technical architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs/api', 'API'], ['/docs#health', t('测试', 'Testing')]]");
+  expect(web('info.js')).toContain("[['/docs', t('架构', 'Architecture')], ['/docs/cost', t('运行成本', 'Cost')], ['/docs/security', t('安全', 'Security')], ['/docs#api', 'API'], ['/docs#health', t('健康', 'Health')]]");
+  expect(web('info.js')).not.toContain('Technical architecture');
+  expect(web('app.js')).toContain("architecture: ['架构', 'Architecture']");
 });
 
 test('the Docs label is localised with the rest of the header', () => {
@@ -48,5 +42,4 @@ test('the Docs label is localised with the rest of the header', () => {
 test('every footer ends dliu.com · Docs, localised', () => {
   expect(web('index.html')).toContain('<a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-footer="docs">Docs</a></footer>');
   expect(web('app.js')).toContain(`document.querySelector('[data-footer="docs"]').textContent = t('文档', 'Docs');`);
-  expect(web('docs-api.html')).toContain('<a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-zh="文档" data-en="Docs">Docs</a></footer>');
 });

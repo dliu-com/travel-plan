@@ -2,7 +2,7 @@
 
 How [status.dliu.com](https://status.dliu.com) tests https://plan.dliu.com as an anonymous guest, following the dliu.com
 health contract (dliu-com/status `HEALTH.md`). The people's version, with a diagram, is the
-Testing tab, https://plan.dliu.com/docs#health (the old https://plan.dliu.com/docs/health answers 301 there). This file has every technical detail and is enough on its own to implement the tests.
+Health tab, https://plan.dliu.com/docs#health (the old https://plan.dliu.com/docs/health answers 301 there). This file has every technical detail and is enough on its own to implement the tests.
 
 plan.dliu.com (DL Travel Plan) is a private trip planner. Guests see only the start page and the docs; travel plans
 need a Microsoft sign-in or a plan's share link. The checks below prove the public parts work and that the private parts
@@ -91,7 +91,7 @@ A guest can't test anything that needs a sign-in or a share link:
 - uploading, opening or deleting attachments;
 - exporting a real travel plan as a PDF;
 - share links (creating, resetting, opening a plan with one) and their daily limits;
-- the managed API for agents (`/docs/api`), which needs a Microsoft access token.
+- the managed API for agents (`/docs#api`, `/docs/api.md`), which needs a Microsoft access token.
 
 ## Rules
 
