@@ -43,3 +43,19 @@ test('every footer ends dliu.com · Docs, localised', () => {
   expect(web('index.html')).toContain('<a href="https://dliu.com">dliu.com</a> · <a href="/docs" data-footer="docs">Docs</a></footer>');
   expect(web('app.js')).toContain(`document.querySelector('[data-footer="docs"]').textContent = t('文档', 'Docs');`);
 });
+
+test('the Architecture tab starts with the shared Source code link to this repo, in both languages', () => {
+  const { renderDocs } = require('./docs-dom');
+  for (const [language, label] of [['en', 'Source code:'], ['zh', '源代码：']]) {
+    const { root } = renderDocs('architecture', language);
+    const article = root.children[1];
+    const first = article.children[0];
+    expect(first.tagName).toBe('p');
+    expect(first.className).toBe('dl-docs-repo');
+    expect(first.children[0].tagName).toBe('span');
+    expect(first.children[0].textContent).toBe(label);
+    const anchors = first.all((n) => n.tagName === 'a');
+    expect(anchors.map((a) => [a.attributes.href, a.textContent])).toEqual([['https://github.com/dliu-com/travel-plan', 'github.com/dliu-com/travel-plan']]);
+    expect(article.children[1].tagName).toBe('h1');
+  }
+});

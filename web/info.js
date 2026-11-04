@@ -51,11 +51,20 @@ window.PlanInfo = (() => {
     return grid;
   }
 
+  const REPO = 'https://github.com/dliu-com/travel-plan';
+  // The shared dl-docs-repo line: the first thing on the Architecture tab.
+  function repoLink(t) {
+    const p = el('p', 'dl-docs-repo');
+    p.append(el('span', '', t('源代码：', 'Source code:')), ' ', link(REPO, REPO.replace('https://', ''), true));
+    return p;
+  }
+
   // ---------------------------------------------------------------- Architecture
   function architecture(t) {
     const { stats, tiers, flow, more } = D();
     const page = el('article', 'dl-docs');
     page.append(
+      repoLink(t),
       el('h1', '', t('架构', 'Architecture')),
       el('p', 'lead', t(
         'DL 旅行计划是一个私人行程规划网站：按天安排行程、标注确认状态、附上预订单和照片，再通过链接和同行的朋友一起编辑。网站完全运行在 AWS 无服务器服务上，空闲时不占用任何服务器。',
