@@ -3,6 +3,7 @@
 How [status.dliu.com](https://status.dliu.com) tests https://plan.dliu.com as an anonymous guest, following the dliu.com
 health contract (dliu-com/status `HEALTH.md`). The people's version, with a diagram, is the
 Health tab, https://plan.dliu.com/docs#health (the old https://plan.dliu.com/docs/health answers 301 there). This file has every technical detail and is enough on its own to implement the tests.
+Live status: https://status.dliu.com/site/plan
 
 plan.dliu.com (DL Travel Plan) is a private trip planner. Guests see only the start page and the docs; travel plans
 need a Microsoft sign-in or a plan's share link. The checks below prove the public parts work and that the private parts

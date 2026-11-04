@@ -453,6 +453,13 @@ window.PlanInfo = (() => {
     p.append(t('机器可读版本：', 'Machine-readable version: '), link(href, href));
     return p;
   }
+  // This site's own page on status.dliu.com (key "plan").
+  const STATUS_PAGE = 'https://status.dliu.com/site/plan';
+  function statusLink(t) {
+    const p = el('p', 'source');
+    p.append(t('实时状态：', 'Live status: '), link(STATUS_PAGE, STATUS_PAGE.replace('https://', ''), true));
+    return p;
+  }
   function machineLink(t, href) {
     const p = el('p', 'source');
     p.append(link(href, t('给机器读的技术版本（Markdown）', 'Technical version for machines (Markdown)')));
@@ -519,6 +526,7 @@ window.PlanInfo = (() => {
     page.append(
       el('h1', '', t('网站怎么被测试', 'How the site is tested')),
       machineTopLink(t, '/docs/health.md'),
+      statusLink(t),
       el('p', 'lead', t(
         'status.dliu.com 每 15 分钟像一位没登录的普通访客一样访问本站：打开公开页面，请网站检查一下自己的存储，再把结果显示在状态页上。它从不登录，也从不改动任何内容。',
         'Every 15 minutes, status.dliu.com visits this site like an ordinary visitor who isn’t signed in: it opens the public pages, asks the site to check its own storage, and shows the result on its status page. It never signs in and never changes anything.',

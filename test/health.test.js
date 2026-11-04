@@ -176,6 +176,9 @@ test('/docs#health keeps high-level details (which page or endpoint) but no exac
     expect(article.children[1].textContent).toBe(`${language === 'en' ? 'Machine-readable version: ' : '机器可读版本：'}/docs/health.md`);
     expect(article.children[1].all((n) => n.tagName === 'a')).toEqual([md[0]]);
     expect(article.children[article.children.length - 1].all((n) => n.tagName === 'a')).toEqual([md[1]]);
+    // Next to it, this site's live page on status.dliu.com.
+    expect(article.children[2].textContent).toBe(`${language === 'en' ? 'Live status: ' : '实时状态：'}status.dliu.com/site/plan`);
+    expect(article.children[2].all((n) => n.tagName === 'a').map((n) => n.attributes.href)).toEqual(['https://status.dliu.com/site/plan']);
     expect(md[1].textContent).toBe(language === 'en' ? 'Technical version for machines (Markdown)' : '给机器读的技术版本（Markdown）');
   }
 });
